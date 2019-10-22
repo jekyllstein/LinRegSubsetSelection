@@ -1,5 +1,6 @@
 using LinRegSubsetSelection
 using Random
+using Test
 
 M = 10000
 N = 100
@@ -28,5 +29,9 @@ ytest = Xtest[:, usedind]*betas .+ 1.0
 println("Record is : $record")
 # println("Used columns for model: $(sort(usedind))")
 # println("Stepwise selected columns: $(sort(colsubset))")
+missingcols = setdiff(usedind, colsubset)
+addedcols = setdiff(colsubset, usedind)
 println("Missing stepwise columns: $(setdiff(usedind, colsubset))")
 println("Added stepwise columns: $(setdiff(colsubset, usedind))")
+
+@test isempty(missingcols)

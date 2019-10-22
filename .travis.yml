@@ -1,0 +1,29 @@
+## Documentation: http://docs.travis-ci.com/user/languages/julia/
+language: julia
+
+notifications:
+  email: false
+git:
+  depth: false
+
+matrix: 
+  allow_failures:
+    - julia: nightly
+
+  include:
+    - os: linux
+      julia: 1
+    - os: linux
+      julia: nightly
+    - os: linux
+      julia: 1
+      arch: x86 
+    - os: linux
+      julia: 1
+      arch: arm64
+  # osx builds
+    - os: osx
+      julia: 1
+  # windows builds
+    - os: windows
+      julia: 1
