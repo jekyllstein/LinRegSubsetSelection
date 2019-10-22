@@ -1,0 +1,13 @@
+name = "LinRegSubsetSelection"
+uuid = "4030c640-f3d6-11e9-35d9-0577c9a48e58"
+authors = ["Jason Eckstein <jekyllstein@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
+DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+QRupdate = "c465b395-4abe-5789-807f-2446d20775eb"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
