@@ -1,5 +1,5 @@
 ##########################---Find Best Forward Step---#####################
-function find_best_add_col!(traincols::Vector{Vector{T}}, y::Vector{T}, colsubset::AbstractVector{Int64}, R::Matrix{T}, Xtmp::Matrix{T}, besterr::T, bestbic::T) where T <: AbstractFloat
+function find_best_add_col!(traincols::Vector{Vector{T}}, y::Vector{T}, colsubset::AbstractVector{W}, R::Matrix{T}, Xtmp::Matrix{T}, besterr::T, bestbic::T) where T <: AbstractFloat where W <: Integer
 	l = length(colsubset)
 	@assert size(Xtmp) == (length(y), length(traincols)+1)
 	candidateCols = setdiff(eachindex(traincols), colsubset)
@@ -57,7 +57,7 @@ function find_best_add_col!(traincols::Vector{Vector{T}}, y::Vector{T}, colsubse
 	(bestbic, besterr, bestR, bestcol, newbest)
 end
 
-function find_best_add_col!(traincols::Vector{Vector{T}}, y::Vector{T}, testcols::Vector{Vector{T}}, ytest::Vector{T}, colsubset::AbstractVector{Int64}, R::Matrix{T}, Xtmp::Matrix{T}, Xtmp2::Matrix{T}, besttrainerr::T, besttesterr::T) where T <: AbstractFloat
+function find_best_add_col!(traincols::Vector{Vector{T}}, y::Vector{T}, testcols::Vector{Vector{T}}, ytest::Vector{T}, colsubset::AbstractVector{W}, R::Matrix{T}, Xtmp::Matrix{T}, Xtmp2::Matrix{T}, besttrainerr::T, besttesterr::T) where T <: AbstractFloat where W <: Integer
 	l = length(colsubset)
 	@assert size(Xtmp) == (length(y), length(traincols)+1)
 	@assert size(Xtmp2) == (length(ytest), length(testcols)+1)
@@ -128,7 +128,7 @@ function stepwise_forward_init(traincols::Vector{Vector{T}}, y::Vector{T}) where
 	#get initial R vector for bias terms
 	_, R = qr(ones(T, length(y), 1))
 	#initialize column subset as an empty vector
-	colsubset = Vector{Int64}()
+	colsubset = Vector{Integer}()
 	#initialize record for bias terms
 	record = [("", copy(sort(colsubset)), err, bic)]
 	#initialize Xtmp
@@ -137,7 +137,7 @@ function stepwise_forward_init(traincols::Vector{Vector{T}}, y::Vector{T}) where
 	(bic, err, colsubset, R, record, Xtmp, 0)
 end
 
-function stepwise_forward!(traincols::Vector{Vector{T}}, y::Vector{T}, bic::T, err::T, colsubset::AbstractVector{Int64}, R::Matrix{T}, record::Vector{U}, Xtmp::Matrix{T}, numsteps::Int64 = 0) where T <: AbstractFloat where U <: Tuple
+function stepwise_forward!(traincols::Vector{Vector{T}}, y::Vector{T}, bic::T, err::T, colsubset::AbstractVector{W}, R::Matrix{T}, record::Vector{U}, Xtmp::Matrix{T}, numsteps::Integer = 0) where T <: AbstractFloat where U <: Tuple where W <: Integer
 	if length(colsubset) == length(traincols)
 		println()
 		println("Ending forward iteration after adding all $(length(traincols)) available columns.")
@@ -175,7 +175,7 @@ function stepwise_forward!(traincols::Vector{Vector{T}}, y::Vector{T}, bic::T, e
 	end
 end
 
-function stepwise_forward!(traincols::Vector{Vector{T}}, y::Vector{T}, testcols::Vector{Vector{T}}, ytest::Vector{T}, testerr::T, trainerr::T, colsubset::AbstractVector{Int64}, R::Matrix{T}, record::Vector{U}, Xtmp::Matrix{T}, Xtmp2::Matrix{T}, numsteps::Int64 = 0) where T <: AbstractFloat where U <: Tuple
+function stepwise_forward!(traincols::Vector{Vector{T}}, y::Vector{T}, testcols::Vector{Vector{T}}, ytest::Vector{T}, testerr::T, trainerr::T, colsubset::AbstractVector{W}, R::Matrix{T}, record::Vector{U}, Xtmp::Matrix{T}, Xtmp2::Matrix{T}, numsteps::Integer = 0) where T <: AbstractFloat where U <: Tuple where W <: Integer
 	if length(colsubset) == length(traincols)
 		println("Ending forward iteration after adding all $(length(traincols)) available columns.")
 		return (testerr, trainerr, colsubset, record, Xtmp, Xtmp2, numsteps, R)
@@ -202,7 +202,7 @@ function stepwise_forward!(traincols::Vector{Vector{T}}, y::Vector{T}, testcols:
 end
 
 ##########################---Find Best Backward Step---#####################
-function find_best_remove_col!(traincols::Vector{Vector{T}}, y::Vector{T}, colsubset::AbstractVector{Int64}, R::Matrix{T}, Xtmp::Matrix{T}, besterr::T, bestbic::T) where T <: AbstractFloat
+function find_best_remove_col!(traincols::Vector{Vector{T}}, y::Vector{T}, colsubset::AbstractVector{W}, R::Matrix{T}, Xtmp::Matrix{T}, besterr::T, bestbic::T) where T <: AbstractFloat where W <: Integer
 	l = length(colsubset)
 	@assert size(Xtmp) == (length(y), length(traincols)+1)
 	println()
@@ -266,7 +266,7 @@ function find_best_remove_col!(traincols::Vector{Vector{T}}, y::Vector{T}, colsu
 	(bestbic, besterr, bestR, bestcol, newbest)
 end
 
-function find_best_remove_col(traincols::Vector{Vector{T}}, y::Vector{T}, testcols::Vector{Vector{T}}, ytest::Vector{T},colsubset::AbstractVector{Int64}, R::Matrix{T}, Xtmp::Matrix{T}, Xtmp2::Matrix{T}, besttrainerr::T, besttesterr::T) where T <: AbstractFloat
+function find_best_remove_col(traincols::Vector{Vector{T}}, y::Vector{T}, testcols::Vector{Vector{T}}, ytest::Vector{T},colsubset::AbstractVector{W}, R::Matrix{T}, Xtmp::Matrix{T}, Xtmp2::Matrix{T}, besttrainerr::T, besttesterr::T) where T <: AbstractFloat where W <: Integer
 	l = length(colsubset)
 	@assert size(Xtmp) = (length(y), length(traincols)+1)
 	println(string("Preparing to evaluate ", length(colsubset), " columns for removal."))
@@ -338,7 +338,7 @@ function find_best_remove_col(traincols::Vector{Vector{T}}, y::Vector{T}, testco
 end
 
 ########################----Iterate Backwards---#############################
-function stepwise_backward!(traincols::Vector{Vector{T}}, y::Vector{T}, bic::T, err::T, colsubset::AbstractVector{Int64}, R::Matrix{T}, record::Vector{U}, Xtmp::Matrix{T}, numsteps::Int64 = 0) where T <: AbstractFloat where U <: Tuple
+function stepwise_backward!(traincols::Vector{Vector{T}}, y::Vector{T}, bic::T, err::T, colsubset::AbstractVector{W}, R::Matrix{T}, record::Vector{U}, Xtmp::Matrix{T}, numsteps::Integer = 0) where T <: AbstractFloat where U <: Tuple where W <: Integer
 	if isempty(colsubset)
 		println("Ending backward iteration after removing all $(length(traincols)) available columns.")
 		println("----------------------------------------------------------------")
@@ -376,7 +376,7 @@ function stepwise_backward!(traincols::Vector{Vector{T}}, y::Vector{T}, bic::T, 
 	end
 end
 
-function stepwise_backward!(traincols::Vector{Vector{T}}, y::Vector{T}, testcols::Vector{Vector{T}}, ytest::Vector{T}, testerr::T, trainerr::T, colsubset::AbstractVector{Int64}, R::Matrix{T}, record::Vector{U}, Xtmp::Matrix{T}, Xtmp2::Matrix{T}, numsteps::Int64 = 0) where T <: AbstractFloat where U <: Tuple
+function stepwise_backward!(traincols::Vector{Vector{T}}, y::Vector{T}, testcols::Vector{Vector{T}}, ytest::Vector{T}, testerr::T, trainerr::T, colsubset::AbstractVector{W}, R::Matrix{T}, record::Vector{U}, Xtmp::Matrix{T}, Xtmp2::Matrix{T}, numsteps::Integer = 0) where T <: AbstractFloat where U <: Tuple where W <: Integer
 	if isempty(colsubset)
 		println("Ending backward iteration after removing all $(length(traincols)) available columns.")
 		return (testerr, trainerr, colsubset, record, Xtmp, Xtmp2, numsteps, R)
