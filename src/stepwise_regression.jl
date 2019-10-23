@@ -28,7 +28,7 @@ function find_best_add_col!(traincols::Vector{Vector{T}}, y::Vector{T}, colsubse
 		newbic = calc_linreg_bic(newerr, view(Xtmp, :, 1:l+2), y)
 		tErr = time() - t
 
-		printupdate = (i == 1) || (i == length(candidateCols)) || ((time() - tstart) >= 2) 
+		printupdate = (i == 1) || ((time() - tstart) >= 2) 
 		
 		if printupdate
 			print("\r\u1b[K\u1b[A")
@@ -36,12 +36,13 @@ function find_best_add_col!(traincols::Vector{Vector{T}}, y::Vector{T}, colsubse
 			print("\r\u1b[K\u1b[A")
 			println("R update time = $tR, Fill time = $tFill, Fit time = $tErr")
 			println(string("Done with column ", c, ": number ", i, " out of ", length(candidateCols), " total candidates"))
+			tstart = time()
 		end
 
 		if newbic < bestbic
 			besterr = newerr
 			bestbic = newbic
-			bestR = Rnew
+			bestR = copy(Rnew)
 			bestcol = c
 			newbest = true
 			printupdate && println("Got new best error and BIC of : $(round(newerr, sigdigits = 3)), $(round(newbic, sigdigits = 3))")
@@ -54,7 +55,7 @@ function find_best_add_col!(traincols::Vector{Vector{T}}, y::Vector{T}, colsubse
 	
 	if newbest && (bestcol != candidateCols[end])
 		#leave Xtmp with best subset
-		Xtmp[:, l+2] .= traincols[bestcol]
+		view(Xtmp, :, l+2) .= traincols[bestcol]
 	end
 
 	(bestbic, besterr, bestR, bestcol, newbest)
@@ -69,6 +70,7 @@ function find_best_add_col!(traincols::Vector{Vector{T}}, y::Vector{T}, testcols
 	println()
 	println()
 	
+	tstart = time()
 	bestR = R
 	bestcol = 0
 	newbest = false
@@ -90,30 +92,34 @@ function find_best_add_col!(traincols::Vector{Vector{T}}, y::Vector{T}, testcols
 		newtesterr = calc_linreg_error(newbeta, view(Xtmp2, :, 1:l+2), ytest)
 		tErr = time() - t
 
-		print("\r\u1b[K\u1b[A")
-		print("\r\u1b[K\u1b[A")
-		print("\r\u1b[K\u1b[A")
-		println("R update time = $tR, Fill time = $tFill, Fit time = $tErr")
-		println(string("Done with column ", c, ": number ", i, " out of ", length(candidateCols), " total candidates"))
+		printupdate = (i == 1) || ((time() - tstart) >= 2) 
+		if printupdate
+			print("\r\u1b[K\u1b[A")
+			print("\r\u1b[K\u1b[A")
+			print("\r\u1b[K\u1b[A")
+			println("R update time = $tR, Fill time = $tFill, Fit time = $tErr")
+			println(string("Done with column ", c, ": number ", i, " out of ", length(candidateCols), " total candidates"))
+			tstart = time()
+		end
 
 		if newtesterr < besttesterr
 			besttrainerr = newtrainerr
 			besttesterr = newtesterr
-			bestR = Rnew
+			bestR = copy(Rnew)
 			bestcol = c
 			newbest = true
-			println("Got new best train and test errors of: $(round(newtrainerr, sigdigits = 3)),  $(round(newtesterr, sigdigits = 3))")
+			printupdate && println("Got new best train and test errors of: $(round(newtrainerr, sigdigits = 3)),  $(round(newtesterr, sigdigits = 3))")
 
 		else
-			println("Got worse train and test error of : $(round(newtrainerr, sigdigits = 3)),  $(round(newtesterr, sigdigits = 3))")
+			printupdate && println("Got worse train and test error of : $(round(newtrainerr, sigdigits = 3)),  $(round(newtesterr, sigdigits = 3))")
 		end
 
 	end
 
 	#leave Xtmp and Xtmp2 in best column state
 	if newbest && (bestcol != candidateCols[end])
-		Xtmp[:, l+2] .= traincols[bestcol]
-		Xtmp2[:, l+2] .= testcols[bestcol]
+		view(Xtmp, :, l+2) .= traincols[bestcol]
+		view(Xtmp2, :, l+2) .= testcols[bestcol]
 	end
 
 	(besttesterr, besttrainerr, bestR, bestcol, newbest)
@@ -152,11 +158,11 @@ function find_best_remove_col!(traincols::Vector{Vector{T}}, y::Vector{T}, colsu
 		#replace column that was just removed and overwrite the next column to be removed
 		t = time()
 		if i > 1
-			Xtmp[:, i] .= traincols[c]
+			view(Xtmp, :, i) .= traincols[c]
 		end
 		tFill = time() - t
 
-		printupdate = (i == 1) || (i == length(colsubset)) || ((time() - tstart) >= 2)
+		printupdate = (i == length(colsubset)) || ((time() - tstart) >= 2)
 
 		if printupdate
 			print("\r\u1b[K\u1b[A")
@@ -164,11 +170,12 @@ function find_best_remove_col!(traincols::Vector{Vector{T}}, y::Vector{T}, colsu
 			print("\r\u1b[K\u1b[A")
 			println("R update time = $tR, Fill time = $tFill, Fit time = $tErr")
 			println(string("Done with column ", c, ": number ", i, " out of ", length(colsubset), " total candidates"))
+			tstart = time()
 		end
 		if newbic < bestbic
 			besterr = newerr
 			bestbic = newbic
-			bestR = Rnew
+			bestR = copy(Rnew)
 			bestcol = c
 			besti = i
 			newbest = true
@@ -179,10 +186,15 @@ function find_best_remove_col!(traincols::Vector{Vector{T}}, y::Vector{T}, colsu
 		end
 	end
 
-	if newbest && (besti != 1)
+	if newbest
 		#undo column removal back to desired column
 		for i in 1:besti-1
-			Xtmp[:, i+1] .= traincols[colsubset[i]]
+			view(Xtmp, :, i+1) .= traincols[colsubset[i]]
+		end
+	else
+		#restore Xtmp to original state
+		for i in 1:l
+			view(Xtmp, :, i+1) .= traincols[colsubset[i]]
 		end
 	end
 	(bestbic, besterr, bestR, bestcol, newbest)
@@ -227,19 +239,20 @@ function find_best_remove_col!(traincols::Vector{Vector{T}}, y::Vector{T}, testc
 		end
 		tFill = time() - t
 
-		printupdate = (i == 1) || (i == length(colsubset)) || ((time() - tstart) >= 2) 
+		printupdate = (i == length(colsubset)) || ((time() - tstart) >= 2) 
 		if printupdate
 			print("\r\u1b[K\u1b[A")
 			print("\r\u1b[K\u1b[A")
 			print("\r\u1b[K\u1b[A")
 			println("R update time = $tR, Fill time = $tFill, Fit time = $tErr")
 			println(string("Done with column ", c, ": number ", i, " out of ", length(colsubset), " total candidates"))
+			tstart = time()
 		end
 
 		if newtesterr < besttesterr
 			besttrainerr = newtrainerr
 			besttesterr = newtesterr
-			bestR = Rnew
+			bestR = copy(Rnew)
 			bestcol = c
 			besti = i
 			newbest = true
@@ -249,11 +262,17 @@ function find_best_remove_col!(traincols::Vector{Vector{T}}, y::Vector{T}, testc
 		end
 	end
 
-	if newbest && (besti != 1)
+	if newbest
 		#undo column removal back to desired column
 		for i in 1:besti-1
-			Xtmp[:, i+1] .= traincols[colsubset[i]]
-			Xtmp2[:, i+1] .= testcols[colsubset[i]]
+			view(Xtmp, :, i+1) .= traincols[colsubset[i]]
+			view(Xtmp2, :, i+1) .= testcols[colsubset[i]]
+		end
+	else
+		#restore both Xtmps to original state
+		for i in 1:l
+			view(Xtmp, :, i+1) .= traincols[colsubset[i]]
+			view(Xtmp2, :, i+1) .= testcols[colsubset[i]]
 		end
 	end
 	(besttesterr, besttrainerr, bestR, bestcol, newbest)
@@ -340,7 +359,7 @@ function stepwise_iterate!(data::NTuple{N, InOutPairCols{T}}, err2::T, err1::T, 
 		direction ? push!(colsubset, bestcol) : setdiff!(colsubset, bestcol)
 		#update record
 		push!(record, ("$recstr$bestcol", copy(sort(colsubset)), besterr1, besterr2))
-		stepwise_iterate!(data, besterr2, besterr1, colsubset, bestR, record, tmpX..., numsteps = numsteps+1)
+		stepwise_iterate!(data, besterr2, besterr1, colsubset, bestR, record, tmpX..., numsteps = numsteps+1, direction = direction)
 	end
 end
 
