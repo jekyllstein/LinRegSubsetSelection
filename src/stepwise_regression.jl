@@ -358,7 +358,7 @@ function run_stepwise_reg(data::InOutPair{T}...; colnames = ["Col $a" for a in 1
 	while output[end] > 0 #check that the previous direction took successful steps
 		direction = !direction #change direction
 		#pass previous output into iteration leaving out the number of steps
-		output = stepwise_iterate!(datainput, output[1:end-1]..., direction = false)
+		output = stepwise_iterate!(datainput, output[1:end-1]..., direction = direction)
 	end
 
 	colsubset = output[3]
