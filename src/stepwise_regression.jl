@@ -11,9 +11,12 @@ function find_best_add_col!(traincols::Vector{Vector{T}}, y::Vector{T}, colsubse
 	bestR = R
 	bestcol = 0
 	newbest = false
+	Rnew = Matrix{T}(undef, l+2, l+2)
+	r = Vector{T}(undef, length(y))
 	for (i, c) in enumerate(candidateCols)
 		t = time()
-		Rnew = qraddcol(view(Xtmp, :, 1:l+1), R, traincols[c])
+		#update Rnew in place
+		qraddcol!(view(Xtmp, :, 1:l+1), R, traincols[c], Rnew, r)
 		tR = time() - t
 
 		t = time()
@@ -62,7 +65,6 @@ function find_best_add_col!(traincols::Vector{Vector{T}}, y::Vector{T}, testcols
 	@assert size(Xtmp) == (length(y), length(traincols)+1)
 	@assert size(Xtmp2) == (length(ytest), length(testcols)+1)
 	candidateCols = setdiff(eachindex(traincols), colsubset)
-	println(string("Preparing to evaluate ", length(candidateCols), " remaining columns for addition.  Currently using $(length(colsubset)) columns out of a possible $(length(traincols)) with best train and test error of: ", (besttrainerr, besttesterr)))
 	println()
 	println()
 	println()
@@ -70,9 +72,12 @@ function find_best_add_col!(traincols::Vector{Vector{T}}, y::Vector{T}, testcols
 	bestR = R
 	bestcol = 0
 	newbest = false
+	Rnew = Matrix{T}(undef, l+2, l+2)
+	r = Vector{T}(undef, length(y))
 	for (i, c) in enumerate(candidateCols)
 		t = time()
-		Rnew = qraddcol(view(Xtmp, :, 1:l+1), R, traincols[c])
+		#update Rnew in place
+		qraddcol!(view(Xtmp, :, 1:l+1), R, traincols[c], Rnew, r)
 		tR = time() - t
 
 		t = time()
@@ -82,7 +87,7 @@ function find_best_add_col!(traincols::Vector{Vector{T}}, y::Vector{T}, testcols
 
 		t = time()
 		newtrainerr, newbeta = calc_linreg_error(Rnew, view(Xtmp, :, 1:l+2), y)
-		newtesterr = calc_linreg_err(newbeta, view(Xtmp2, :, 1:l+2), ytest)
+		newtesterr = calc_linreg_error(newbeta, view(Xtmp2, :, 1:l+2), ytest)
 		tErr = time() - t
 
 		print("\r\u1b[K\u1b[A")
@@ -97,10 +102,10 @@ function find_best_add_col!(traincols::Vector{Vector{T}}, y::Vector{T}, testcols
 			bestR = Rnew
 			bestcol = c
 			newbest = true
-			println("Got new best train and test errors of: $newtrainerr, $newtesterr")
+			println("Got new best train and test errors of: $(round(newtrainerr, sigdigits = 3)),  $(round(newtesterr, sigdigits = 3))")
 
 		else
-			println("Got worse train and test error of : $newtrainerr, $newtesterr")
+			println("Got worse train and test error of : $(round(newtrainerr, sigdigits = 3)),  $(round(newtesterr, sigdigits = 3))")
 		end
 
 	end
@@ -112,93 +117,6 @@ function find_best_add_col!(traincols::Vector{Vector{T}}, y::Vector{T}, testcols
 	end
 
 	(besttesterr, besttrainerr, bestR, bestcol, newbest)
-end
-
-########################----Iterate Forward---#############################
-function stepwise_forward_init(traincols::Vector{Vector{T}}, y::Vector{T}) where T <: AbstractFloat
-	println("Initializing forward stepwise selection from zero columns")
-	println("Calculating bias term error as a baseline")
-
-	err = sum(abs2, (y .- mean(y)))/length(y)
-	bic = length(y)*log(err)+log(length(y))
-
-	println("Using 0 columns out of a possible $(length(traincols)), the error and bic is: $(round(err, sigdigits = 3)), $(round(bic, sigdigits = 3))")
-	println("----------------------------------------------------------")
-
-	#get initial R vector for bias terms
-	_, R = qr(ones(T, length(y), 1))
-	#initialize column subset as an empty vector
-	colsubset = Vector{Integer}()
-	#initialize record for bias terms
-	record = [("", copy(sort(colsubset)), err, bic)]
-	#initialize Xtmp
-	Xtmp = ones(T, length(y), length(traincols)+1)
-
-	(bic, err, colsubset, R, record, Xtmp, 0)
-end
-
-function stepwise_forward!(traincols::Vector{Vector{T}}, y::Vector{T}, bic::T, err::T, colsubset::AbstractVector{W}, R::Matrix{T}, record::Vector{U}, Xtmp::Matrix{T}, numsteps::Integer = 0) where T <: AbstractFloat where U <: Tuple where W <: Integer
-	if length(colsubset) == length(traincols)
-		println()
-		println("Ending forward iteration after adding all $(length(traincols)) available columns.")
-		println("-----------------------------------------------------------------------")
-		return (bic, err, colsubset, record, Xtmp, numsteps, R)
-	end
-
-	if numsteps == 0
-		println("Starting forward selection from $(length(colsubset)) columns")
-		println()
-		println()
-		println()
-		println()
-	end
-
-	print("\r\u1b[K\u1b[A")
-	print("\r\u1b[K\u1b[A")
-	print("\r\u1b[K\u1b[A")
-	print("\r\u1b[K\u1b[A")
-
-	println("On forward step $numsteps using $(length(colsubset)) columns out of a possible $(length(traincols)) with best error and bic of: $(round(err, sigdigits = 3)), $(round(bic, sigdigits = 3))")
-	(bestbic, besterr, bestR, bestcol, newbest) = find_best_add_col!(traincols, y, colsubset, R, Xtmp, err, bic)
-
-	if !newbest
-		println()
-		println("Ending forward iteration using $(length(colsubset)) out of $(length(traincols)) available columns and $numsteps forward steps")
-		println("-----------------------------------------------------------------------")
-		(bic, err, colsubset, record, Xtmp, numsteps, R)
-	else
-		#update colsubset
-		push!(colsubset, bestcol)
-		#update record
-		push!(record, ("+$bestcol", copy(sort(colsubset)), besterr, bestbic))
-		stepwise_forward!(traincols, y, bestbic, besterr, colsubset, bestR, record, Xtmp, numsteps+1)
-	end
-end
-
-function stepwise_forward!(traincols::Vector{Vector{T}}, y::Vector{T}, testcols::Vector{Vector{T}}, ytest::Vector{T}, testerr::T, trainerr::T, colsubset::AbstractVector{W}, R::Matrix{T}, record::Vector{U}, Xtmp::Matrix{T}, Xtmp2::Matrix{T}, numsteps::Integer = 0) where T <: AbstractFloat where U <: Tuple where W <: Integer
-	if length(colsubset) == length(traincols)
-		println("Ending forward iteration after adding all $(length(traincols)) available columns.")
-		return (testerr, trainerr, colsubset, record, Xtmp, Xtmp2, numsteps, R)
-	end
-
-	print("\r\u1b[K\u1b[A")
-	print("\r\u1b[K\u1b[A")
-	print("\r\u1b[K\u1b[A")
-	print("\r\u1b[K\u1b[A")
-	print("\r\u1b[K\u1b[A")
-	print("\r\u1b[K\u1b[A")
-	(besttesterr, besttrainerr, bestR, bestcol, newbest) = find_best_add_col!(traincols, y, testcols, ytest, colsubset, R, Xtmp, Xtmp2, trainerr, testerr)
-	if !newbest
-		println("Ending forward iteration using $(length(colsubset)) out of $(length(traincols)) available columns and $numsteps forward steps")
-		(testerr, trainerr, colsubset, record, Xtmp, Xtmp2, numsteps, R)
-	else
-		println("On forward step $numsteps adding column $bestcol with a test error of $besttesterr.")
-		#update colsubset
-		push!(colsubset, bestcol)
-		#update record
-		push!(record, ("+$bestcol", colsubset, besttrainerr, besttesterr))
-		stepwise_forward!(traincols, y, testcols, ytest, besttesterr, besttrainerr, colsubset, bestR, record, Xtmp, Xtmp2, numsteps+1)
-	end
 end
 
 ##########################---Find Best Backward Step---#####################
@@ -238,11 +156,15 @@ function find_best_remove_col!(traincols::Vector{Vector{T}}, y::Vector{T}, colsu
 		end
 		tFill = time() - t
 
-		print("\r\u1b[K\u1b[A")
-		print("\r\u1b[K\u1b[A")
-		print("\r\u1b[K\u1b[A")
-		println("R update time = $tR, Fill time = $tFill, Fit time = $tErr")
-		println(string("Done with column ", c, ": number ", i, " out of ", length(colsubset), " total candidates"))
+		printupdate = (i == 1) || (i == length(colsubset)) || ((time() - tstart) >= 2)
+
+		if printupdate
+			print("\r\u1b[K\u1b[A")
+			print("\r\u1b[K\u1b[A")
+			print("\r\u1b[K\u1b[A")
+			println("R update time = $tR, Fill time = $tFill, Fit time = $tErr")
+			println(string("Done with column ", c, ": number ", i, " out of ", length(colsubset), " total candidates"))
+		end
 		if newbic < bestbic
 			besterr = newerr
 			bestbic = newbic
@@ -250,10 +172,10 @@ function find_best_remove_col!(traincols::Vector{Vector{T}}, y::Vector{T}, colsu
 			bestcol = c
 			besti = i
 			newbest = true
-			println("Got new best error and BIC of : $newerr, $newbic")
+			printupdate && println("Got new best error and BIC of : $(round(newerr, sigdigits = 3)), $(round(newbic, sigdigits = 3))")
 
 		else
-			println("Got worse error and BIC of : $newerr, $newbic")
+			printupdate && println("Got worse error and BIC of : $(round(newerr, sigdigits = 3)), $(round(newbic, sigdigits = 3))")
 		end
 	end
 
@@ -266,11 +188,11 @@ function find_best_remove_col!(traincols::Vector{Vector{T}}, y::Vector{T}, colsu
 	(bestbic, besterr, bestR, bestcol, newbest)
 end
 
-function find_best_remove_col(traincols::Vector{Vector{T}}, y::Vector{T}, testcols::Vector{Vector{T}}, ytest::Vector{T},colsubset::AbstractVector{W}, R::Matrix{T}, Xtmp::Matrix{T}, Xtmp2::Matrix{T}, besttrainerr::T, besttesterr::T) where T <: AbstractFloat where W <: Integer
+function find_best_remove_col!(traincols::Vector{Vector{T}}, y::Vector{T}, testcols::Vector{Vector{T}}, ytest::Vector{T},colsubset::AbstractVector{W}, R::Matrix{T}, Xtmp::Matrix{T}, Xtmp2::Matrix{T}, besttrainerr::T, besttesterr::T) where T <: AbstractFloat where W <: Integer
 	l = length(colsubset)
-	@assert size(Xtmp) = (length(y), length(traincols)+1)
-	println(string("Preparing to evaluate ", length(colsubset), " columns for removal."))
-	println("Currently using $(length(colsubset)) columns out of a possible $(length(traincols)) with best error and BIC of $besttrainerr, $besttesterr")
+	@assert size(Xtmp) == (length(y), length(traincols)+1)
+	@assert size(Xtmp2) == (length(ytest), length(testcols)+1)
+
 	println()
 	println()
 	println()
@@ -294,7 +216,7 @@ function find_best_remove_col(traincols::Vector{Vector{T}}, y::Vector{T}, testco
 
 		t = time()
 		newtrainerr, newbeta = calc_linreg_error(Rnew, view(Xtmp, :, 1:l), y)
-		newtesterr = calc_linreg_bic(newbeta, view(Xtmp2, :, 1:l), ytest)
+		newtesterr = calc_linreg_error(newbeta, view(Xtmp2, :, 1:l), ytest)
 		tErr = time() - t
 
 		#replace column that was just removed and overwrite the next column to be removed
@@ -305,13 +227,13 @@ function find_best_remove_col(traincols::Vector{Vector{T}}, y::Vector{T}, testco
 		end
 		tFill = time() - t
 
-		printupdate = (i == 1) || (i == length(candidateCols)) || ((time() - tstart) >= 2) 
+		printupdate = (i == 1) || (i == length(colsubset)) || ((time() - tstart) >= 2) 
 		if printupdate
 			print("\r\u1b[K\u1b[A")
 			print("\r\u1b[K\u1b[A")
 			print("\r\u1b[K\u1b[A")
 			println("R update time = $tR, Fill time = $tFill, Fit time = $tErr")
-			println(string("Done with column ", c, ": number ", i, " out of ", length(candidateCols), " total candidates"))
+			println(string("Done with column ", c, ": number ", i, " out of ", length(colsubset), " total candidates"))
 		end
 
 		if newtesterr < besttesterr
@@ -321,9 +243,9 @@ function find_best_remove_col(traincols::Vector{Vector{T}}, y::Vector{T}, testco
 			bestcol = c
 			besti = i
 			newbest = true
-			printupdate && println("Got new best train and test error of: $newtrainerr, $newtesterr")
+			printupdate && println("Got new best train and test error of: $(round(newtrainerr, sigdigits = 3)), $(round(newtesterr, sigdigits = 3))r")
 		else
-			printupdate && println("Got worse train and test error of: $newtrainerr, $newtesterr")
+			printupdate && println("Got worse train and test error of: $(round(newtrainerr, sigdigits = 3)), $(round(newtesterr, sigdigits = 3))")
 		end
 	end
 
@@ -337,16 +259,62 @@ function find_best_remove_col(traincols::Vector{Vector{T}}, y::Vector{T}, testco
 	(besttesterr, besttrainerr, bestR, bestcol, newbest)
 end
 
-########################----Iterate Backwards---#############################
-function stepwise_backward!(traincols::Vector{Vector{T}}, y::Vector{T}, bic::T, err::T, colsubset::AbstractVector{W}, R::Matrix{T}, record::Vector{U}, Xtmp::Matrix{T}, numsteps::Integer = 0) where T <: AbstractFloat where U <: Tuple where W <: Integer
-	if isempty(colsubset)
-		println("Ending backward iteration after removing all $(length(traincols)) available columns.")
-		println("----------------------------------------------------------------")
-		return (bic, err, colsubset, record, Xtmp, numsteps, R)
+########################----Iterate Steps---#############################
+InOutPairCols{T} = Tuple{Vector{U}, U} where U <: Vector{T} where T <: AbstractFloat
+function stepwise_forward_init(data::InOutPairCols{T}...) where T <: AbstractFloat
+	testerr = (length(data) > 1)
+	println("Initializing forward stepwise selection from zero columns")
+	println("Calculating bias term error as a baseline")
+
+	y = data[1][2]
+	traincols = data[1][1]
+
+	err1 = sum(abs2, (y .- mean(y)))/length(y)
+	err2 = testerr ? sum(abs2, (data[2][2] .- mean(y)))/length(data[2][2]) : length(y)*log(err1)+log(length(y))
+
+	str = testerr ? "train and test error" : "error and bic"
+	println("Using 0 columns out of a possible $(length(traincols)), $str is: $(round(err1, sigdigits = 3)), $(round(err2, sigdigits = 3))")
+	println("----------------------------------------------------------")
+
+	#get initial R vector for bias terms
+	_, R = qr(ones(T, length(y), 1))
+	#initialize column subset as an empty vector
+	colsubset = Vector{Integer}()
+	#initialize record for bias terms
+	record = [("", copy(sort(colsubset)), err1, err2)]
+	#initialize Xtmp
+	Xtmp = ones(T, length(y), length(traincols)+1)
+
+	tmpX = if testerr
+		Xtmp2 = ones(T, length(data[2][2]), length(data[1][1])+1)
+		(Xtmp, Xtmp2)
+	else
+		(Xtmp,)
+	end
+
+	(err2, err1, colsubset, R, record, tmpX...)
+end
+
+function stepwise_iterate!(data::NTuple{N, InOutPairCols{T}}, err2::T, err1::T, colsubset::AbstractVector{W}, R::Matrix{T}, record::Vector{U}, tmpX::Matrix{T}...; numsteps::Integer = 0, direction::Bool = true) where T <: AbstractFloat where W <:Integer where U <: Tuple where N
+
+	#direction is forward if true and backward if false, acts as a toggle
+	testerr = (length(data) > 1)
+	dirstr = direction ? "forward" : "backward"
+	dirstr2 = direction ? "adding" : "removing"
+	recstr = direction ? "+" : "-"
+	func! = direction ? find_best_add_col! : find_best_remove_col!
+
+	
+	traincols = data[1][1]
+	if direction ? length(colsubset) == length(traincols) : isempty(colsubset)
+		println()
+		println("Ending $dirstr iteration after $dirstr2 all $(length(traincols)) available columns.")
+		println("-----------------------------------------------------------------------")
+		return (err2, err1, colsubset, R, record, tmpX..., numsteps)
 	end
 
 	if numsteps == 0
-		println("Starting backward selection from $(length(colsubset)) columns")
+		println("Starting $dirstr selection from $(length(colsubset)) columns")
 		println()
 		println()
 		println()
@@ -358,71 +326,47 @@ function stepwise_backward!(traincols::Vector{Vector{T}}, y::Vector{T}, bic::T, 
 	print("\r\u1b[K\u1b[A")
 	print("\r\u1b[K\u1b[A")
 
-	println("On backward step $numsteps using $(length(colsubset)) columns out of a possible $(length(traincols)) with best error and bic of: $(round(err, sigdigits = 3)), $(round(bic, sigdigits = 3))")
-	(bestbic, besterr, bestR, bestcol, newbest) = find_best_remove_col!(traincols, y, colsubset, R, Xtmp, err, bic)
+	str = testerr ? "train and test error" : "error and bic"
+	println("On $dirstr step $numsteps using $(length(colsubset)) columns out of a possible $(length(traincols)) with best $str of: $(round(err1, sigdigits = 3)), $(round(err2, sigdigits = 3))")
+	(besterr2, besterr1, bestR, bestcol, newbest) = func!(reduce((a, b) -> (a..., b...), data)..., colsubset, R, tmpX..., err1, err2)
 
 	if !newbest
 		println()
-		println("Ending backward iteration using $(length(colsubset)) out of $(length(traincols)) available columns and $numsteps backward steps")
+		println("Ending $dirstr iteration using $(length(colsubset)) out of $(length(traincols)) available columns and $numsteps $dirstr steps")
 		println("-----------------------------------------------------------------------")
-
-		(bic, err, colsubset, record, Xtmp, numsteps, R)
+		(err2, err1, colsubset, R, record, tmpX..., numsteps)
 	else
 		#update colsubset
-		setdiff!(colsubset, bestcol)
+		direction ? push!(colsubset, bestcol) : setdiff!(colsubset, bestcol)
 		#update record
-		push!(record, ("-$bestcol", colsubset, besterr, bestbic))
-		stepwise_backward!(traincols, y, bestbic, besterr, colsubset, bestR, record, Xtmp, numsteps+1)
-	end
-end
-
-function stepwise_backward!(traincols::Vector{Vector{T}}, y::Vector{T}, testcols::Vector{Vector{T}}, ytest::Vector{T}, testerr::T, trainerr::T, colsubset::AbstractVector{W}, R::Matrix{T}, record::Vector{U}, Xtmp::Matrix{T}, Xtmp2::Matrix{T}, numsteps::Integer = 0) where T <: AbstractFloat where U <: Tuple where W <: Integer
-	if isempty(colsubset)
-		println("Ending backward iteration after removing all $(length(traincols)) available columns.")
-		return (testerr, trainerr, colsubset, record, Xtmp, Xtmp2, numsteps, R)
-	end
-
-	print("\r\u1b[K\u1b[A")
-	print("\r\u1b[K\u1b[A")
-	print("\r\u1b[K\u1b[A")
-	print("\r\u1b[K\u1b[A")
-	print("\r\u1b[K\u1b[A")
-	print("\r\u1b[K\u1b[A")
-	(besttrainerr, besttesterr, bestR, bestcol, newbest) = find_best_remove_col!(traincols, y, testcols, ytest, colsubset, R, Xtmp, Xtmp2, trainerr, testerr)
-
-	if !newbest
-		println("Ending backward iteration using $(length(colsubset)) out of $(length(traincols)) available columns and $numsteps backward steps")
-		(testerr, trainerr, colsubset, record, Xtmp, Xtmp2, numsteps, R)
-	else
-		println("On backward step $numsteps removing column $bestcol with a test error of $besttesterr.")
-		#update colsubset
-		setdiff!(colsubset, bestcol)
-		#update record
-		push!(record, ("-$bestcol", colsubset, besttrainerr, besttesterr))
-		stepwise_backward!(traincols, y, testcols, ytest, besttesterr, besttrainerr, colsubset, bestR, record, Xtmp, Xtmp2, numsteps+1)
+		push!(record, ("$recstr$bestcol", copy(sort(colsubset)), besterr1, besterr2))
+		stepwise_iterate!(data, besterr2, besterr1, colsubset, bestR, record, tmpX..., numsteps = numsteps+1)
 	end
 end
 
 ###############################----Run Stepwise----#######################################
-function run_stepwise_reg(X::Matrix{T}, y::Vector{T}; colnames = ["Col $a" for a in 1:size(X, 2)]) where T <: AbstractFloat
+InOutPair{T} = Tuple{Matrix{T}, Vector{T}} where T <: AbstractFloat
+# function run_stepwise_reg(data::T...; colnames = ["Col $a" for a in 1:size(data[1][1], 2)]) where T <: NTuple{N, InOutPair{U}} where U <: AbstractFloat where N
+function run_stepwise_reg(data::InOutPair{T}...; colnames = ["Col $a" for a in 1:size(data[1][1], 2)]) where T <: AbstractFloat
 
-	traincols = collect.(eachcol(X))
+	#convert X's in data to vectors of columns
+	datainput = map(a -> (collect.(eachcol(a[1])), a[2]), data)
 
-	(bic, err, colsubset, record, Xtmp, numsteps, R) = stepwise_forward!(traincols, y, stepwise_forward_init(traincols, y)...)
+	direction = true #start in forward direction
+	output = stepwise_iterate!(datainput, stepwise_forward_init(datainput...)...)
 
-	while numsteps > 0
-
-		(bic, err, colsubset, record, Xtmp, numsteps, R) = stepwise_backward!(traincols, y, bic, err, colsubset, R, record, Xtmp)
-
-		if numsteps > 0
-			(bic, err, colsubset, record, Xtmp, numsteps, R) = stepwise_forward!(traincols, y, bic, err, colsubset, R, record, Xtmp)
-		end
+	while output[end] > 0 #check that the previous direction took successful steps
+		direction = !direction #change direction
+		#pass previous output into iteration leaving out the number of steps
+		output = stepwise_iterate!(datainput, output[1:end-1]..., direction = false)
 	end
+
+	colsubset = output[3]
+	record = output[5]
 
 	usedcols = sort(colsubset)
 	usedcolscheck = [in(i, usedcols) ? "x\t$n" : " \t$n" for (i, n) in enumerate(colnames)]
 	(colsubset, usedcolscheck, record)
 end
-
 
 

@@ -61,7 +61,7 @@ uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 
 [[QRupdate]]
 deps = ["LinearAlgebra"]
-git-tree-sha1 = "e32b4f4029298778d4a9785a39a7e604bd710242"
+git-tree-sha1 = "8d0eaa66be8046f6875278323ef1b62b9554f0be"
 repo-rev = "master"
 repo-url = "https://github.com/jekyllstein/QRupdate.jl"
 uuid = "c465b395-4abe-5789-807f-2446d20775eb"
