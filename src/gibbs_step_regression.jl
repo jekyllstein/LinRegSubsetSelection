@@ -137,7 +137,7 @@ function run_gibbs_step(regdata, Rnow, tmpX, currentcols, errsrecord, colsrecord
 	firstcolsvec = subset_to_bin(currentcols, n)
 
 	membuffer = if Sys.isapple()
-		n*n*min(M, 1000)*8
+		n*n*min(m, 1000)*8
 	else
 		1e9 + (n*l*4 + n*n*1000)*8 #number of bytes to make sure are available for dictionary addition
 	end
