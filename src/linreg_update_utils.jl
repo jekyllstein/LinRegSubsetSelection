@@ -46,3 +46,50 @@ function calc_linreg_error(Rin::Matrix{T}, X::AbstractMatrix{T}, y::Vector{T}) w
 	(err, betas)
 end
 
+function printcolsvec(origcolsvec, colsvec, switchind, acc)
+	nmax = length(digits(length(colsVec))) #maximum number of digits for indicator column
+	emax = 20
+	c = 0
+	l = 1
+	print(repeat(" ", nmax+1)) #add nmax+1 spaces of padding for the row labels
+	for i in 1:emax print(string(lpad(i, 2), " ")) end
+	println()
+	print(repeat(" ", nmax+1))
+	for i in eachindex(colsVec)
+    	#highlight cells with attempted changes
+    	bracketcolor = if i == switchInd
+    		#if an attempted change is accepted make the brackets blue else red
+    		acc ? :blue : :red
+    	else
+    		#if no change leave green
+    		:green
+    	end
+
+    	fillstate = ((i == switchind) && acc) ? !colsvec[i] : colsvec[i]
+    	#fill cell with X if being used and nothing if not
+    	fillchar = fillstate ? 'X' : ' '
+    	#if current state differs from original highlight in yellow
+    	fillcolor = fillstate == origcolsvec[i] ? :default : :reverse
+
+    	printstyled(IOContext(stdout, :color => true), "[", color = bracketcolor)
+    	printstyled(IOContext(stdout, :color => true), fillchar, color = fillcolor)
+    	printstyled(IOContext(stdout, :color => true), "]", color = bracketcolor)
+        c += 1
+        if i != length(colsvec)
+	        if c == emax
+	        	println()
+	        	print(string(lpad(emax*l, nmax), " "))
+	        	c = 0
+	        	l += 1
+	        end
+	    else
+	    	newcolchange = if acc
+	    		colsvec[switchind] ?  -1 : 1
+	    	else
+	    		0
+	    	end
+	    	print(string(" ", sum(colsvec) + newcolchange, "/", length(colsvec)))
+	    end
+    end
+    return l
+end
