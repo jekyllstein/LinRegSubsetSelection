@@ -367,7 +367,10 @@ end
 InOutPair{T} = Tuple{Matrix{T}, Vector{T}} where T <: AbstractFloat
 # function run_stepwise_reg(data::T...; colnames = ["Col $a" for a in 1:size(data[1][1], 2)]) where T <: NTuple{N, InOutPair{U}} where U <: AbstractFloat where N
 function run_stepwise_reg(data::InOutPair{T}...; colnames = ["Col $a" for a in 1:size(data[1][1], 2)]) where T <: AbstractFloat
-
+	println()
+	println("==================================================================")
+	println("Starting stepwise selection with $(size(data[1][1], 2)) possible columns")
+	println("==================================================================")
 	#convert X's in data to vectors of columns
 	datainput = map(a -> (collect.(eachcol(a[1])), a[2]), data)
 
@@ -382,7 +385,10 @@ function run_stepwise_reg(data::InOutPair{T}...; colnames = ["Col $a" for a in 1
 
 	colsubset = output[3]
 	record = output[5]
-
+	println("=================================================================")
+	println("Finished stepwise selection with $(length(record[end][2])) columns and final errors: $(record[end][end-1:end])")
+	println("=================================================================")
+	println()
 	usedcols = sort(colsubset)
 	usedcolscheck = [in(i, usedcols) ? "x\t$n" : " \t$n" for (i, n) in enumerate(colnames)]
 	(colsubset, usedcolscheck, record)

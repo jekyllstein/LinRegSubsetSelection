@@ -26,6 +26,15 @@ commoncols = shuffleind[testgap+1:l]
 println("$l columns with $(length(commoncols)) shared between test and train")
 println("---------------------------------------------------------------------")
 
+(colsubset, err, bic, colsrecord) = run_stepwise_anneal_process((X, y))
+missingcols = setdiff(usedindtrain, colsubset)
+addedcols = setdiff(colsubset, usedindtrain)
+println("Missing gibbs anneal columns: $missingcols")
+println("Added gibbs anneal columns: $addedcols")
+println("----------------------------------------------")
+
+@test isempty(missingcols)
+
 (colsubset, usedcolscheck, record) = run_stepwise_reg((X, y))
 
 missingcols = setdiff(usedindtrain, colsubset)
@@ -54,3 +63,4 @@ println("Added stepwise test columns: $addedtestcols")
 println("Missing stepwise common columns: $missingcommoncols")
 println("Added stepwise common columns: $addedcommoncols")
 @test isempty(missingcommoncols)
+

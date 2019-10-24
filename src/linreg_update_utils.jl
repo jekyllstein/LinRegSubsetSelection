@@ -47,7 +47,7 @@ function calc_linreg_error(Rin::Matrix{T}, X::AbstractMatrix{T}, y::Vector{T}) w
 end
 
 function printcolsvec(origcolsvec, colsvec, switchind, acc)
-	nmax = length(digits(length(colsVec))) #maximum number of digits for indicator column
+	nmax = length(digits(length(colsvec))) #maximum number of digits for indicator column
 	emax = 20
 	c = 0
 	l = 1
@@ -55,9 +55,9 @@ function printcolsvec(origcolsvec, colsvec, switchind, acc)
 	for i in 1:emax print(string(lpad(i, 2), " ")) end
 	println()
 	print(repeat(" ", nmax+1))
-	for i in eachindex(colsVec)
+	for i in eachindex(colsvec)
     	#highlight cells with attempted changes
-    	bracketcolor = if i == switchInd
+    	bracketcolor = if i == switchind
     		#if an attempted change is accepted make the brackets blue else red
     		acc ? :blue : :red
     	else
@@ -92,4 +92,19 @@ function printcolsvec(origcolsvec, colsvec, switchind, acc)
 	    end
     end
     return l
+end
+
+RecordType{T} = OrderedDict{Array{Bool, 1}, Tuple{T, T, Matrix{T}, Vector{Int64}}}
+function purge_record!(colsrecord::RecordType{T}, p = 0.1) where T <: Real
+    l = length(colsrecord)
+    if l > 1
+	    ps = LinRange(2*p, 0.0, l)
+	    for (i, k) in enumerate(keys(colsrecord))
+	        if rand() < ps[i]       		
+	       		delete!(colsrecord, k)
+	       	end
+		end
+		GC.gc()
+	end
+	return length(colsrecord)
 end

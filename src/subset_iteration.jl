@@ -46,3 +46,12 @@ function iterate_subsets(l::Integer)
 	end
 	return acc2
 end
+
+function formvec(n, acc = [[0], [1]])
+	if n == 0
+		return acc
+	else
+		formvec(n-1, [[[0; a] for a in acc]; [[1; a] for a in acc]])
+	end
+end
+
