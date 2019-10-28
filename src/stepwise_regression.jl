@@ -1,3 +1,136 @@
+##########################--Get Update Paths-##############################
+function updatecols(colsubset::ColSubset, newcolsvec::ColVec)
+	l = length(newcolsvec)
+	# println("l = $l")
+	colsvec = subset_to_bin(colsubset, l)
+	diffs = newcolsvec .- colsvec
+	# println("colsvec true = $(sum(colsvec))")
+	# println("colsubset = $colsubset")
+	# println("newcolsvec true = $(sum(newcolsvec))")
+	# println("Num diffs = $(sum(abs.(diffs)))")
+	if sum(abs.(diffs)) > sum(newcolsvec)
+		remcols = Vector{Integer}()
+		addcols = findall(newcolsvec)
+		startvec = Vector{Integer}()
+		newvec = addcols
+	else
+		remcols = findall(diffs .== -1)
+		addcols = findall(diffs .== 1)
+		startvec = colsubset 
+		newvec = vcat(setdiff(colsubset, remcols), addcols)
+	end
+	# println("colsubset = $colsubset")
+	# println("newcolsvec = $newcolsvec")
+	# println("startvec = $startvec")
+	# println("remcols = $remcols")
+	# println("addcols = $addcols")
+	# println("newvec = $newvec")
+	(startvec, remcols, addcols, newvec)
+end
+
+function removecols!(traincols::Vector{Vector{T}}, X::Matrix{T}, colsubset::ColSubset, ks::ColSubset) where T <: AbstractFloat
+	l = length(colsubset)
+	inds = filter(!isnothing, [findfirst(colsubset .== k) for k in ks])
+	if !isempty(inds)
+		starti = minimum(inds)
+		subset2 = setdiff(colsubset, ks)
+		l = length(subset2)
+		for i in starti:l
+			view(X, :, i+1) .= traincols[subset2[i]]
+		end
+	end
+	return (inds, l)
+end 
+
+
+function update_errs!(traincols::Vector{Vector{T}}, y::Vector{T}, colsubset::ColSubset, newcolsvec::ColVec, R::Matrix{T}, Xtmp::Matrix{T}, Rorig::Matrix{T}) where T <: AbstractFloat
+
+	Rnew = Matrix{T}(undef, 0, 0)
+	(startvec, remcols, addcols, newvec) = updatecols(colsubset, newcolsvec)
+	# println("colsubset = $colsubset")
+	# println("newvec = $newvec")
+	#build R from scratch starting with the orignal based on the bias column
+	if isempty(startvec)
+		Rnew = qraddcol(view(Xtmp, :, 1:1), Rorig, traincols[addcols[1]])
+		view(Xtmp, :, 2) .= traincols[addcols[1]]
+		if length(addcols) > 1
+			for (i, c) in enumerate(addcols[2:end])
+				Rnew = qraddcol(view(Xtmp, :, 1:i+1), Rnew, traincols[c])
+				view(Xtmp, :, i+2) .= traincols[c]
+			end
+		end
+	else
+		#start Rnew where R is currently
+		Rnew = copy(R)
+		#get removal indicies and update Xtmp
+		(inds, l) = removecols!(traincols, Xtmp, colsubset, remcols)
+		# println("colsubset = $colsubset")
+		# println("remcols = $remcols")
+		# println("reminds = $inds")
+		#remove columns in reverse so indicies don't get screwed up
+		for i in Iterators.reverse(sort(inds))
+			Rnew = qrdelcol(Rnew, i+1)
+		end
+
+		#update Rnew and add columns to Xtmp one at a time
+		# println("addcols = $addcols")
+		# println("l = $l")
+		for (i, c) in enumerate(addcols)
+			Rnew = qraddcol(view(Xtmp, :, 1:l+1), Rnew, traincols[c])
+			view(Xtmp, :, i+l+1) .= traincols[c]
+		end
+	end
+
+	l2 = sum(newcolsvec)
+	@assert l2 == length(newvec) "$l2 is not equal to the new vector length $(length(newvec))"
+	newerr, newbeta = calc_linreg_error(Rnew, view(Xtmp, :, 1:l2+1), y)
+	newbic = calc_linreg_bic(newerr, view(Xtmp, :, 1:l2+1), y)
+	(newerr, newbic, newvec, Rnew)
+end
+
+function update_errs!(traincols::Vector{Vector{T}}, y::Vector{T}, testcols::Vector{Vector{T}}, ytest::Vector{T}, colsubset::ColSubset, newcolsvec::ColVec, R::Matrix{T}, Xtmp::Matrix{T}, Xtmp2::Matrix{T}, Rorig::Matrix{T}) where T <: AbstractFloat
+
+	Rnew = Matrix{T}(undef, 0, 0)
+	(startvec, remcols, addcols, newvec) = updatecols(colsubset, newcolsvec)
+	
+	#build R from scratch starting with the orignal based on the bias column
+	if isempty(startvec)
+		Rnew = qraddcol(view(Xtmp, :, 1:1), Rorig, traincols[addcols[1]])
+		view(Xtmp, :, 2) .= traincols[addcols[1]]
+		view(Xtmp2, :, 2) .= testcols[addcols[1]]
+		if length(addcols) > 1
+			for (i, c) in enumerate(addcols[2:end])
+				Rnew = qraddcol(view(Xtmp, :, 1:i+1), Rnew, traincols[c])
+				view(Xtmp, :, i+2) .= traincols[c]
+				view(Xtmp2, :, i+2) .= testcols[c]
+			end
+		end
+	else
+		#get removal indicies and update Xtmp
+		Rnew = copy(R)
+		(inds, l) = removecols!(traincols, Xtmp, colsubset, remcols)
+		removecols!(testcols, Xtmp2, colsubset, remcols)
+		#remove columns in reverse so indicies don't get screwed up
+		for i in Iterators.reverse(sort(inds))
+			Rnew = qrdelcol(Rnew, i+1)
+		end
+
+		#update Rnew and add columns to Xtmp one at a time
+		for (i, c) in enumerate(addcols)
+			Rnew = qraddcol(view(Xtmp, :, 1:l+1), Rnew, traincols[c])
+			view(Xtmp, :, i+l+1) .= traincols[c]
+			view(Xtmp2, :, i+l+1) .= testcols[c]
+		end
+	end
+
+	l2 = sum(newcolsvec)
+	newerr, newbeta = calc_linreg_error(Rnew, view(Xtmp, :, 1:l2+1), y)
+	newtesterr = calc_linreg_error(newbeta, view(Xtmp2, :, 1:l2+1), ytest)
+	(newerr, newtesterr, newvec, Rnew)
+end
+
+
+
 ##########################---Find Best Forward Step---#####################
 function find_best_add_col!(traincols::Vector{Vector{T}}, y::Vector{T}, colsubset::AbstractVector{W}, R::Matrix{T}, Xtmp::Matrix{T}, besterr::T, bestbic::T) where T <: AbstractFloat where W <: Integer
 	l = length(colsubset)
@@ -317,7 +450,6 @@ function find_best_remove_col!(traincols::Vector{Vector{T}}, y::Vector{T}, testc
 end
 
 ########################----Iterate Steps---#############################
-InOutPairCols{T} = Tuple{Vector{U}, U} where U <: Vector{T} where T <: AbstractFloat
 function stepwise_forward_init(data::InOutPairCols{T}...) where T <: AbstractFloat
 	testerr = (length(data) > 1)
 	println("Initializing forward stepwise selection from zero columns")
@@ -481,4 +613,101 @@ function run_stepwise_reg(data::InOutPair{T}...; colnames = ["Col $a" for a in 1
 	(colsubset, usedcolscheck, record)
 end
 
+function run_subset_reg(data::InOutPair{T}...; colnames = ["Col $a" for a in 1:size(data[1][1], 2)]) where T <: AbstractFloat
+	
+	maxrecordl = 1000 #maximum number of records to store
+	y = data[1][2]
+	n = size(data[1][1], 2)
+	m = length(y)
+
+	testerr = length(data) > 1
+
+	colvecs = formvecs(n, 1) #start with first non empty vector
+	numsets = length(colvecs)+1
+	Xtmp = ones(T, m, n+1)
+	tmpX = if testerr
+		m2 = length(data[2][2])
+		Xtmp2 = ones(T, m2, n+1)
+		(Xtmp, Xtmp2)
+	else
+		(Xtmp,)
+	end
+
+
+	println()
+	println("==================================================================")
+	println("Starting full subset selection with $n possible columns and $numsets possible subeets")
+	println("==================================================================")
+	#convert X's in data to vectors of columns
+	datainput = mapreduce(a -> (collect.(eachcol(a[1])), a[2]), (a, b) -> (a...,b...), data)
+
+
+	#start with initial empty subset
+	colsubset = Vector{Integer}()
+	bestsubset = copy(colsubset)
+	bestcolvec = BitVector(undef, n)
+
+	_, Rorig = qr(view(Xtmp, :, 1))
+	R = copy(Rorig)
+	bestR = copy(R)
+
+	err1 = sum(abs2, (y .- mean(y)))/length(y)
+	err2 = testerr ? sum(abs2, (data[2][2] .- mean(y)))/length(data[2][2]) : length(y)*log(err1)+log(length(y))
+
+	besterr1 = err1
+	besterr2 = err2
+	bestnum = BigInt(0)
+
+	record = [(besterr1, besterr2, bestcolvec, BigInt(0))]
+	str = testerr ? "train and test error" : "error and BIC"
+	println()
+	println()
+	println()
+	println()
+
+	tstart = time()
+	lastreport = time()
+	iteravg = 0.0
+
+	for (i, newcolsvec) in enumerate(colvecs)
+		t = time()
+		(err1, err2, colsubset, R) = update_errs!(datainput..., colsubset, newcolsvec, R, tmpX..., Rorig)
+		if err2 < besterr2
+			bestR = copy(R)
+			bestsubset = copy(colsubset)
+			besterr1 = err1
+			besterr2 = err2
+			bestnum = i
+			push!(record, (besterr1, besterr2, newcolsvec, i))
+			if length(record) > maxrecordl
+				popfirst!(record)
+			end
+		end
+		stept = time() - t
+		iteravg = (i == 1) ? stept : 0.99*iteravg + 0.01*stept
+
+		if time() - lastreport > 2.0
+			print("\r\u1b[K\u1b[A")
+			print("\r\u1b[K\u1b[A")
+			print("\r\u1b[K\u1b[A")
+			print("\r\u1b[K\u1b[A")
+			println("On subset $(i+1) of $numsets using $(length(colsubset)) columns")
+			println("Current results are $str of: $((round(err1, sigdigits = 3), round(err2, sigdigits = 3)))")
+			println("Best results from subset $bestnum using $(length(bestsubset)) columns with $str of: $((round(besterr1, sigdigits = 3), round(besterr2, sigdigits = 3)))")
+
+			stepsleft = numsets - (i+1)
+			timeleft = iteravg*stepsleft
+			println("ETA = $(maketimestr(timeleft))")
+			lastreport = time()
+		end
+	end 
+
+	println("=================================================================")
+	println("Finished subset iteration with the best result for $(length(bestsubset)) columns and final $str of: $((besterr1, besterr2))")
+	println("=================================================================")
+	println()
+	usedcols = sort(bestsubset)
+	usedcolscheck = [in(i, usedcols) ? "x\t$n" : " \t$n" for (i, n) in enumerate(colnames)]
+	(bestsubset, usedcolscheck, record)
+end
 

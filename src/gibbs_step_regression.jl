@@ -1,9 +1,17 @@
-function gibbs_step(data::NTuple{N, InOutPairCols{T}}, currentcols::AbstractVector{W}, Rlast::Matrix{T}, Xtmp::Matrix{T}, lasterr::T, lastbic::T, colsrecord::RecordType{T}, colsvec::BinVec, temp, inum, tsteps, t_start, accept_rate, dicthitrate, firstcolsvec, printiter = true; xfillcol = 0) where N where T <: AbstractFloat where W <: Integer
-
-	traincols = data[1][1]
-	y = data[1][2]
+function gibbs_step(data::NTuple{N, InOutPairCols{T}}, currentcols::AbstractVector{W}, Rlast::Matrix{T}, tmpX::NTuple{N, Matrix{T}}, lasterr::T, lastbic::T, colsrecord::RecordType{T}, colsvec::ColVec, temp, inum, tsteps, t_start, accept_rate, dicthitrate, firstcolsvec, printiter = true; xfillcol = 0) where N where T <: AbstractFloat where W <: Integer
 
 	testerr = length(data) > 1
+	traincols = data[1][1]
+	y = data[1][2]
+	Xtmp = tmpX[1]
+	if testerr
+		Xtmp2 = tmpX[2]
+		testcols = data[2][1]
+		ytest = data[2][2]
+	end
+
+	str = testerr ? "train and test error" : "error and BIC"
+
 
 	#randomly select an index to switch
 	switchind = ceil(Int64, rand()*length(colsvec))
@@ -39,6 +47,9 @@ function gibbs_step(data::NTuple{N, InOutPairCols{T}}, currentcols::AbstractVect
 		for (j, c) in enumerate(newcols)
 			if j >= fillstartcol
 				view(Xtmp, :, j+1) .= traincols[c]
+				if testerr
+					view(Xtmp2, :, j+1) .= testcols[c]
+				end
 			end
 		end
 		tfill = time() - t2
@@ -58,7 +69,12 @@ function gibbs_step(data::NTuple{N, InOutPairCols{T}}, currentcols::AbstractVect
 		#####################Calculate New Errors#############################
 		t2 = time()
 		newerr, newbeta = calc_linreg_error(Rnew, view(Xtmp, :, 1:length(newcols) + 1), y)
-		newbic = calc_linreg_bic(newerr, view(Xtmp, :, 1:length(newcols)+1), y)
+		newbic = if testerr
+			calc_linreg_error(newbeta, view(Xtmp2, :, 1:length(newcols) + 1), ytest)
+		else
+			calc_linreg_bic(newerr, view(Xtmp, :, 1:length(newcols)+1), y)
+		end
+
 		terr = time()-t2
 		push!(errtimestr, "Err update time = $terr\n")
 		(newerr, newbic, Rnew, newcols)
@@ -93,12 +109,12 @@ function gibbs_step(data::NTuple{N, InOutPairCols{T}}, currentcols::AbstractVect
 		println("Done evaluating candidate columns:")
 		printcolsvec(firstcolsvec, colsvec, switchind, acc)
 		println()
-		println(string("Got error and BIC of ", (newerr, newbic)))
+		println(string("Got $str of ", (newerr, newbic)))
 		
 		alphastr = rpad(round(alpha, digits = 10), 12, '0')
 		accstr = acc ? "Accepting" : "Rejecting"
 		println("$accstr new candidate columns with an alpha of $alphastr, recent acceptance rate = $(round(accept_rate, digits = 5))")
-		println(string("Current state error and BIC: ", (lasterr, lastbic)))
+		println(string("Current state $str: ", (lasterr, lastbic)))
 		println()
 	end
 
@@ -149,7 +165,7 @@ function run_gibbs_step(regdata, Rnow, tmpX, currentcols, errsrecord, colsrecord
 	colsvec = errsrecord[end][2]
 	(err1, err2) = errsrecord[end][3:4]
 	push!(costsequence, err2)
-	(newerr1, newerr2, newcolsvec, changestring, acc, Rnew, newcols, xfillcol) = gibbs_step(regdata, currentcols, Rnow, tmpX..., err1, err2, colsrecord, colsvec, tsteps[1], 1, tsteps, itertime, accept_rate, dicthitrate, firstcolsvec, false)
+	(newerr1, newerr2, newcolsvec, changestring, acc, Rnew, newcols, xfillcol) = gibbs_step(regdata, currentcols, Rnow, tmpX, err1, err2, colsrecord, colsvec, tsteps[1], 1, tsteps, itertime, accept_rate, dicthitrate, firstcolsvec, false)
 
 	
 	###############################Purge record if insufficient memory###########
@@ -204,7 +220,7 @@ function run_gibbs_step(regdata, Rnow, tmpX, currentcols, errsrecord, colsrecord
 		
 		################################Perform gibbs step iteration#############
 		t_stepstart = time()
-		(newerr1, newerr2, newcolsvec, changestring, acc, Rnew, newcols, xfillcol) = gibbs_step(regdata, currentcols, Rnow, tmpX..., err1, err2, colsrecord, colsvec, tsteps[i], i, tsteps, itertime, accept_rate, dicthitrate, firstcolsvec, printiter, xfillcol = xfillcol)
+		(newerr1, newerr2, newcolsvec, changestring, acc, Rnew, newcols, xfillcol) = gibbs_step(regdata, currentcols, Rnow, tmpX, err1, err2, colsrecord, colsvec, tsteps[i], i, tsteps, itertime, accept_rate, dicthitrate, firstcolsvec, printiter, xfillcol = xfillcol)
 
 		
 		###############################Purge record if insufficient memory#######

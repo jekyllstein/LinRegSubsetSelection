@@ -1,12 +1,19 @@
-function subset_to_bin(colset::AbstractVector{T}, l::Integer) where T <: Integer
-	binvec = BitVector(undef, l)
+###################################--Types--###################################
+ColVec{T} = AbstractVector{T} where T <: Bool
+ColSubset{T} = AbstractVector{T} where T <: Integer
+InOutPairCols{T} = Tuple{Vector{U}, U} where U <: Vector{T} where T <: AbstractFloat
+InOutPair{T} = Tuple{Matrix{T}, Vector{T}} where T <: AbstractFloat
+###############################################################################
+
+function subset_to_bin(colset::ColSubset, l::Integer)
+	binvec = BitVector(zeros(Bool, l))
 	for c in colset
 		binvec[c] = true
 	end
 	return binvec
 end
 
-function get_neighbors(binvec::AbstractVector{T}; flag = :all) where T <: Bool
+function get_neighbors(binvec::ColVec; flag = :all)
 	binvec2 = copy(binvec)
 	neighbors = Vector{BitVector}()
 	for i in eachindex(binvec)
@@ -22,7 +29,7 @@ function get_neighbors(binvec::AbstractVector{T}; flag = :all) where T <: Bool
 	return neighbors
 end
 
-function get_add_neighbor(binvec::AbstractVector{T}, i::Integer) where T <: Bool
+function get_add_neighbor(binvec::ColVec, i::Integer)
 	neighbor = copy(binvec)
 	if !binvec[i]
 		neighbor[i] = !neighbor[i] #switch index i
@@ -32,14 +39,13 @@ function get_add_neighbor(binvec::AbstractVector{T}, i::Integer) where T <: Bool
 	end
 end
 
-function get_add_neighbors(binvec::AbstractVector{T}) where T <: Bool
+function get_add_neighbors(binvec::ColVec) where T <: Bool
 	ind = findall(.!binvec)
 	(get_add_neighbor(binvec, i)[1] for i in ind)
 end
 
-BinVec = AbstractVector{T} where T <: Bool
 
-function iterate_subsets!(binvec::T, acc::Vector{T}) where T <: BinVec
+function iterate_subsets!(binvec::T, acc::Vector{T}) where T <: ColVec
 	push!(acc, binvec)
 	neighbors = filter!(a -> !in(a, acc), get_neighbors(binvec))	
 	for n in neighbors
@@ -55,7 +61,7 @@ end
 
 iterate_subsets!(N::Integer, acc) = iterate_subsets!(subset_to_bin(Vector{Integer}(), N), acc)
 
-function iterate_subsets(binvec::T, acc::Vector{T}; flag = :add) where T <: BinVec
+function iterate_subsets(binvec::T, acc::Vector{T}; flag = :add) where T <: ColVec
 	neighbors = filter!(a -> !in(a, acc), get_neighbors(binvec, flag = flag))
 	if isempty(neighbors)
 		(binvec, acc)
@@ -86,20 +92,19 @@ function formvec(n, acc = [BitVector([false]), BitVector([true])])
 	end
 end
 
-function getvec(n, N)
-	pad = ndigits(2^BigInt(N) - 1, base = 2)
-	BitVector(digits(Bool, n, base = 2, pad = pad))
+function getvec(n::Integer, N::Integer)
+	pad = ndigits(2^BigInt(N) - 1, base=2)
+	BitVector(digits(Bool, n, base=2, pad=pad))
 end
 
 #creates a generator that contains all subset vectors for N features
-formvecs(N) = (getvec(n, N) for n in 0:2^BigInt(N) - 1)
+formvecs(N::Integer, start::Integer = 0) = (getvec(n, N) for n in start:2^BigInt(N)-1)
 
-function bitvec_to_num(v::BitVector)
-	acc = BigInt(0)
-	for (i, a) in enumerate(v)
-		if a
-			acc += 2^BigInt(i-1)
-		end
-	end
-	return acc
+function maketimestr(t::AbstractFloat)
+	hours = floor(Integer, t / 60 / 60)
+	minutes = floor(Integer, t / 60) - hours*60
+	seconds = t - (minutes*60) - (hours*60*60)
+	secstr = string(round(seconds, digits = 2))
+	"$hours:$minutes:$(secstr[1:min(4, length(secstr))])"
 end
+
