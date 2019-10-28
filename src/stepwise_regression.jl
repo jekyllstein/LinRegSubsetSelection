@@ -61,6 +61,44 @@ function find_best_add_col!(traincols::Vector{Vector{T}}, y::Vector{T}, colsubse
 	(bestbic, besterr, bestR, bestcol, newbest)
 end
 
+function update_error!(traincols::Vector{Vector{T}}, y::Vector{T}, colsubset::AbstractVector{W}, newcols::AbstractVector{W}, R::Matrix{T}, Xtmp::Matrix{T}, r::Vector{T}) where T <: AbstractFloat where W <: Integer
+	l1 = length(colsubset)
+	l2 = length(newcols)
+	@assert size(Xtmp) == (length(y), length(traincols)+1)
+
+	addcols = setdiff(newcols, colsubset)
+	delind = findall(a -> !in(a, newcols), colsubset)
+	
+	if !isempty(delind)
+		for i in Iterators.reverse(delind)
+			t = time()
+			Rnew = qrdelcol(R, i+1)
+			tR = time() - t
+
+			
+			tFill = time() - t
+		end
+
+		for i in minimum(delind):l1-delind
+			view(Xtmp, :, i+1) .= traincols[newcols[i]]
+		end
+	end
+
+	for (i, c) in enumerate(addcols)
+		qraddcol!(view(Xtmp, :, 1:l1-length(delind)+1), R, traincols[c], Rnew, r)
+		Xtmp[:, l1-length(delind)+2] .= traincols[c]
+	end
+
+
+	
+
+
+	newerr, newbeta = calc_linreg_error(Rnew, view(Xtmp, :, 1:l), y)
+	newbic = calc_linreg_bic(newerr, view(Xtmp, :, 1:l), y)
+		
+	(newbic, newerr, Rnew)
+end
+
 function find_best_add_col!(traincols::Vector{Vector{T}}, y::Vector{T}, testcols::Vector{Vector{T}}, ytest::Vector{T}, colsubset::AbstractVector{W}, R::Matrix{T}, Xtmp::Matrix{T}, Xtmp2::Matrix{T}, besttrainerr::T, besttesterr::T) where T <: AbstractFloat where W <: Integer
 	l = length(colsubset)
 	@assert size(Xtmp) == (length(y), length(traincols)+1)
@@ -315,6 +353,55 @@ function stepwise_forward_init(data::InOutPairCols{T}...) where T <: AbstractFlo
 end
 
 function stepwise_iterate!(data::NTuple{N, InOutPairCols{T}}, err2::T, err1::T, colsubset::AbstractVector{W}, R::Matrix{T}, record::Vector{U}, tmpX::Matrix{T}...; numsteps::Integer = 0, direction::Bool = true) where T <: AbstractFloat where W <:Integer where U <: Tuple where N
+
+	#direction is forward if true and backward if false, acts as a toggle
+	testerr = (length(data) > 1)
+	dirstr = direction ? "forward" : "backward"
+	dirstr2 = direction ? "adding" : "removing"
+	recstr = direction ? "+" : "-"
+	func! = direction ? find_best_add_col! : find_best_remove_col!
+
+	
+	traincols = data[1][1]
+	if direction ? length(colsubset) == length(traincols) : isempty(colsubset)
+		println()
+		println("Ending $dirstr iteration after $dirstr2 all $(length(traincols)) available columns.")
+		println("-----------------------------------------------------------------------")
+		return (err2, err1, colsubset, R, record, tmpX..., numsteps)
+	end
+
+	if numsteps == 0
+		println("Starting $dirstr selection from $(length(colsubset)) columns")
+		println()
+		println()
+		println()
+		println()
+	end
+
+	print("\r\u1b[K\u1b[A")
+	print("\r\u1b[K\u1b[A")
+	print("\r\u1b[K\u1b[A")
+	print("\r\u1b[K\u1b[A")
+
+	str = testerr ? "train and test error" : "error and bic"
+	println("On $dirstr step $numsteps using $(length(colsubset)) columns out of a possible $(length(traincols)) with best $str of: $(round(err1, sigdigits = 3)), $(round(err2, sigdigits = 3))")
+	(besterr2, besterr1, bestR, bestcol, newbest) = func!(reduce((a, b) -> (a..., b...), data)..., colsubset, R, tmpX..., err1, err2)
+
+	if !newbest
+		println()
+		println("Ending $dirstr iteration using $(length(colsubset)) out of $(length(traincols)) available columns and $numsteps $dirstr steps")
+		println("-----------------------------------------------------------------------")
+		(err2, err1, colsubset, R, record, tmpX..., numsteps)
+	else
+		#update colsubset
+		direction ? push!(colsubset, bestcol) : setdiff!(colsubset, bestcol)
+		#update record
+		push!(record, ("$recstr$bestcol", copy(sort(colsubset)), besterr1, besterr2))
+		stepwise_iterate!(data, besterr2, besterr1, colsubset, bestR, record, tmpX..., numsteps = numsteps+1, direction = direction)
+	end
+end
+
+function stepwise_iterate!(data::NTuple{N, InOutPairCols{T}}, err2::T, err1::T, colsubset::AbstractVector{W}, R::Matrix{T}, record::Vector{U}, tmpX::Matrix{T}...; numsteps::Integer = 0) where T <: AbstractFloat where W <:Integer where U <: Tuple where N
 
 	#direction is forward if true and backward if false, acts as a toggle
 	testerr = (length(data) > 1)
