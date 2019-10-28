@@ -61,29 +61,6 @@ end
 
 iterate_subsets!(N::Integer, acc) = iterate_subsets!(subset_to_bin(Vector{Integer}(), N), acc)
 
-function iterate_subsets(binvec::T, acc::Vector{T}; flag = :add) where T <: ColVec
-	neighbors = filter!(a -> !in(a, acc), get_neighbors(binvec, flag = flag))
-	if isempty(neighbors)
-		(binvec, acc)
-	else
-		#find the neighbor with the most subsequent neighbors to iterate through
-		(l, i) = findmax(length.(get_neighbors.(neighbors, flag = flag)))
-		iterate_subsets(neighbors[i], [acc; neighbors], flag = flag)
-	end
-end
-
-function iterate_subsets(l::Integer)
-	binvec = subset_to_bin(Vector{Integer}(), l)
-	acc = [binvec]
-	(binvec, acc1) = iterate_subsets(binvec, acc)
-	(binvec, acc2) = iterate_subsets(binvec, acc1, flag = :remove)
-	while length(acc2) != length(acc1)
-		(binvec, acc1) = iterate_subsets(binvec, acc2)
-		(binvec, acc2) = iterate_subsets(binvec, acc1, flag = :remove)
-	end
-	return acc2
-end
-
 function formvec(n, acc = [BitVector([false]), BitVector([true])])
 	if n == 1
 		return acc

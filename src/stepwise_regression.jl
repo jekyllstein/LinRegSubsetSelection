@@ -533,55 +533,6 @@ function stepwise_iterate!(data::NTuple{N, InOutPairCols{T}}, err2::T, err1::T, 
 	end
 end
 
-function stepwise_iterate!(data::NTuple{N, InOutPairCols{T}}, err2::T, err1::T, colsubset::AbstractVector{W}, R::Matrix{T}, record::Vector{U}, tmpX::Matrix{T}...; numsteps::Integer = 0) where T <: AbstractFloat where W <:Integer where U <: Tuple where N
-
-	#direction is forward if true and backward if false, acts as a toggle
-	testerr = (length(data) > 1)
-	dirstr = direction ? "forward" : "backward"
-	dirstr2 = direction ? "adding" : "removing"
-	recstr = direction ? "+" : "-"
-	func! = direction ? find_best_add_col! : find_best_remove_col!
-
-	
-	traincols = data[1][1]
-	if direction ? length(colsubset) == length(traincols) : isempty(colsubset)
-		println()
-		println("Ending $dirstr iteration after $dirstr2 all $(length(traincols)) available columns.")
-		println("-----------------------------------------------------------------------")
-		return (err2, err1, colsubset, R, record, tmpX..., numsteps)
-	end
-
-	if numsteps == 0
-		println("Starting $dirstr selection from $(length(colsubset)) columns")
-		println()
-		println()
-		println()
-		println()
-	end
-
-	print("\r\u1b[K\u1b[A")
-	print("\r\u1b[K\u1b[A")
-	print("\r\u1b[K\u1b[A")
-	print("\r\u1b[K\u1b[A")
-
-	str = testerr ? "train and test error" : "error and bic"
-	println("On $dirstr step $numsteps using $(length(colsubset)) columns out of a possible $(length(traincols)) with best $str of: $(round(err1, sigdigits = 3)), $(round(err2, sigdigits = 3))")
-	(besterr2, besterr1, bestR, bestcol, newbest) = func!(reduce((a, b) -> (a..., b...), data)..., colsubset, R, tmpX..., err1, err2)
-
-	if !newbest
-		println()
-		println("Ending $dirstr iteration using $(length(colsubset)) out of $(length(traincols)) available columns and $numsteps $dirstr steps")
-		println("-----------------------------------------------------------------------")
-		(err2, err1, colsubset, R, record, tmpX..., numsteps)
-	else
-		#update colsubset
-		direction ? push!(colsubset, bestcol) : setdiff!(colsubset, bestcol)
-		#update record
-		push!(record, ("$recstr$bestcol", copy(sort(colsubset)), besterr1, besterr2))
-		stepwise_iterate!(data, besterr2, besterr1, colsubset, bestR, record, tmpX..., numsteps = numsteps+1, direction = direction)
-	end
-end
-
 ###############################----Run Stepwise----#######################################
 InOutPair{T} = Tuple{Matrix{T}, Vector{T}} where T <: AbstractFloat
 # function run_stepwise_reg(data::T...; colnames = ["Col $a" for a in 1:size(data[1][1], 2)]) where T <: NTuple{N, InOutPair{U}} where U <: AbstractFloat where N
