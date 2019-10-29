@@ -12,6 +12,58 @@ function getnewtemps(temprecord, cutoff = 0)
 	Ts = [Tbar[inds]; 0.0]
 end
 
+function getinitialerrs(regdata::NTuple{N, InOutPairCols{T}}, colsvec::ColVec, colsrecord::RecordType{T}) where T <: AbstractFloat where N
+	testerr = (length(regdata) > 1)
+	traincols = regdata[1][1]
+	n = length(traincols)
+	y = regdata[1][2]
+
+	Xtmp = ones(T, length(y), n+1)
+	tmpX = if testerr
+		testcols = regdata[2][1]
+		Xtmp2 = ones(T, length(regdata[2][2]), length(regdata[1][1])+1)
+		ytest = regdata[2][2]
+		(Xtmp, Xtmp2)
+	else
+		(Xtmp,)
+	end	
+
+	if sum(colsvec) == 0
+		initialcols = Vector{Integer}()
+		println("Calculating bias term error as a baseline")
+		meany = mean(y)
+		err1 = sum(abs2, y .- meany)/length(y)
+		err2 = if testerr
+			sum(abs2, ytest .- meany)/length(ytest)
+		else
+			length(y)*log(err1) + log(length(y))
+		end
+		_, R = qr(view(Xtmp, :, 1:1))
+	else
+		if haskey(colsrecord, colsvec)
+			println("Using dictionary to get errors for $(sum(colsvec)) initial columns ")
+			(err1, err2, R, initialcols) = colsrecord[colsvec]
+		else
+			initialcols = findall(colsvec)
+			println("Finding errors for $(length(initialcols)) initial columns ")
+			for (i, c) in enumerate(initialcols)
+				view(Xtmp, :, i+1) .= traincols[c]
+				if testerr 
+					view(Xtmp2, :, i+1) .= testcols[c]
+				end
+			end
+			_, R = qr(view(Xtmp, :, 1:length(initialcols)+1))
+			err1, beta = calc_linreg_error(R, view(tmpX[1], :, 1:length(initialcols)+1), y)
+			err2 = if testerr
+				calc_linreg_error(beta, view(tmpX[2], :, 1:length(initialcols)+1), ytest)
+			else
+				calc_linreg_bic(err1, view(tmpX[1], :, 1:length(initialcols)+1), y)
+			end
+		end
+	end
+	(testerr, tmpX, initialcols, err1, err2, R)
+end
+
 function gibbs_step(data::NTuple{N, InOutPairCols{T}}, currentcols::AbstractVector{W}, Rlast::Matrix{T}, tmpX::NTuple{N, Matrix{T}}, lasterr::T, lastbic::T, colsrecord::RecordType{T}, colsvec::ColVec, temp, inum, tsteps, t_start, accept_rate, dicthitrate, firstcolsvec, printiter = true; xfillcol = 0) where N where T <: AbstractFloat where W <: Integer
 
 	testerr = length(data) > 1
@@ -52,6 +104,8 @@ function gibbs_step(data::NTuple{N, InOutPairCols{T}}, currentcols::AbstractVect
 		fillstartcol = if addcol
 			xfillcol+1
 		else
+			# println("currentcols = $currentcols")
+			# println("switchind = $switchind")
 			k = findfirst(a -> a == switchind, currentcols)
 			min(xfillcol+1, k)
 		end
@@ -152,7 +206,7 @@ function gibbs_step(data::NTuple{N, InOutPairCols{T}}, currentcols::AbstractVect
 	(newerr, newbic, newcolsvec, changestring, acc, Rnew, newcols, xfillcol)
 end
 
-function run_gibbs_step(regdata, Rnow, tmpX, currentcols, errsrecord, colsrecord::RecordType, tsteps; printstep = true, updateinterval = 2.0, accept_rate = 0.0, dicthitrate = 0.0, itertime = 0.0, calibrate = true)
+function run_gibbs_step(regdata, Rnow, tmpX, currentcols, errsrecord, colsrecord::RecordType, tsteps; printstep = true, updateinterval = 2.0, accept_rate = 0.0, dicthitrate = 0.0, itertime = 0.0, calibrate = true, xfillcol=0)
 	
 	##############################Initialize Values###############################################
 	f = 0.99 #controls how long running average is for iter time and accept and repeat rate
@@ -161,6 +215,7 @@ function run_gibbs_step(regdata, Rnow, tmpX, currentcols, errsrecord, colsrecord
 	deltST = 0.0
 	deltCasum = 0.0
 	temprecord = Vector{Tuple{Float64, Float64}}()
+	costsequence = Vector{Float64}()
 	T0 = calibrate ? Inf : tsteps[1]
 
 	#############################Get dimensions of reg data#####################
@@ -180,9 +235,10 @@ function run_gibbs_step(regdata, Rnow, tmpX, currentcols, errsrecord, colsrecord
 	memcheck = (Sys.free_memory() > membuffer) #make sure enough free memory to add to dictionary
 
 	###############################Get initial values from first iteration#######
-	colsvec = errsrecord[end][2]
-	(err1, err2) = errsrecord[end][3:4]
-	(newerr1, newerr2, newcolsvec, changestring, acc, Rnew, newcols, xfillcol) = gibbs_step(regdata, currentcols, Rnow, tmpX, err1, err2, colsrecord, colsvec, T0, 1, tsteps, itertime, accept_rate, dicthitrate, firstcolsvec, false)
+	colsvec = subset_to_bin(currentcols, n)
+	(err1, err2) = colsrecord[colsvec][1:2]
+	push!(costsequence, err2)
+	(newerr1, newerr2, newcolsvec, changestring, acc, Rnew, newcols, xfillcol) = gibbs_step(regdata, currentcols, Rnow, tmpX, err1, err2, colsrecord, colsvec, T0, 1, tsteps, itertime, accept_rate, dicthitrate, firstcolsvec, false, xfillcol = xfillcol)
 
 	
 	###############################Purge record if insufficient memory###########
@@ -210,6 +266,7 @@ function run_gibbs_step(regdata, Rnow, tmpX, currentcols, errsrecord, colsrecord
 		(err1, err2) = (newerr1, newerr2)
 		deltCT += deltCk
 	end
+	push!(costsequence, err2)
 
 	t_iter = time() - t_stepstart
 	itertime = if itertime == 0
@@ -305,13 +362,174 @@ function run_gibbs_step(regdata, Rnow, tmpX, currentcols, errsrecord, colsrecord
 			println()
 		end
 
+		push!(costsequence, err2)
+
 		itertime = f*itertime + (1-f)*(time() - t_stepstart)
 
 		t_lastprint = printiter ? time() : t_lastprint
 	end
 
-	return (errsrecord, colsrecord, temprecord)
+	return (errsrecord, colsrecord, temprecord, costsequence, currentcols, xfillcol, Rnow)
 end
+
+function calibrate_gibbs_temp(regdata::NTuple{N, InOutPairCols{T}}, tmpX::NTuple{N, Matrix{T}}, Rnow::Matrix{T}, currentcols, errsrecord, colsrecord::RecordType{T}; printstep = true, updateinterval = 2.0, chi = 0.9) where T <: AbstractFloat where N
+	
+	##########Set up initial values and print first iteration##############################
+	t_stepstart = time()
+	t_iter = 0.0
+	accept_rate = 0.0
+	dicthitrate = 0.0
+	testerr = (length(regdata) > 1)
+	traincols = regdata[1][1]
+	y = regdata[1][1]
+	Xtmp = tmpX[1]
+	if testerr
+		testcols = regdata[2][1]
+		ytest = regdata[2][2]
+		Xtmp2 = tmpX[2]
+		tmpX = (Xtmp, Xtmp2)
+	else
+		tmpX = (Xtmp,)
+	end
+
+	n = length(traincols)
+	firstcolsvec = subset_to_bin(currentcols, n)
+	
+	l = length(y)
+	m = 2*round(Int64, n*log(n))
+	tsteps = ones(m+1)
+	accs = zeros(Int64, m)
+	err2record = Vector{Float64}(undef, m)
+	deltCbar = 0.0
+	m1 = 0
+	m2 = 0
+	f = 0.99 #controls how long running average is for iter time and accept and repeat rate
+
+	membuffer = if Sys.isapple()
+		n*n*min(M, 1000)*8
+	else
+		1e9 + (n*l*4 + n*n*1000)*8 #number of bytes to make sure are available for dictionary addition
+	end
+
+	memcheck = (Sys.free_memory() > membuffer) #make sure enough free memory to add to dictionary
+	colsvec = errsrecord[end][2]
+	err1 = errsrecord[end][3]
+	err2 = errsrecord[end][4]
+	T0 = tsteps[1]
+
+	#########################################Perform first step iteration######################################
+	(newerr1, newerr2, newcolsvec, changestring, acc, Rnew, newcols, xfillcol) = gibbs_step(regdata, currentcols, Rnow, tmpX, err1, err2, colsrecord, colsvec, T0, 1, tsteps, t_iter, accept_rate, dicthitrate, firstcolsvec, false)
+
+	###############################Purge record if insufficient memory#######
+	keycheck = haskey(colsrecord, newcolsvec)
+	push!(colsrecord, newcolsvec => (newerr1, newerr2, Rnew, newcols))
+	accept_rate = Float64(acc)
+	dicthitrate = Float64(keycheck)
+	deltC = newerr2 - err2
+	if deltC > 0
+		deltCbar += deltC
+		m2 += 1
+	else
+		m1 += 1
+	end
+
+	tsteps[2] = deltCbar / log(m2 / (m2*chi - (1-chi)*m1)) / m2
+	
+	if acc
+		accs[1] = 1
+		push!(errsrecord, (changestring, newcolsvec, newerr1, newerr2))
+		Rnow = Rnew
+		currentcols = newcols
+		colsvec = newcolsvec
+		(err1, err2) = (newerr1, newerr2)
+	end
+
+	err2record[1] = err2
+
+	t_iter = (time() - t_stepstart)
+	t_lastprint = time()
+
+	for i in 2:length(tsteps)-1
+		if i%1000 == 0 #update memCheck every 1000 steps
+			memcheck = (Sys.free_memory() > membuffer) #make sure enough free memory to add to dictionary
+		end
+		#print second iteration and subsequent once every 1 second by default
+		printiter = if printstep
+			if i == 2
+				true
+			elseif (time() - t_lastprint) > updateinterval
+				true
+			else
+				false
+			end
+		else
+			false
+		end
+
+		t_stepstart = time()
+		(newerr1, newerr2, newcolsvec, changestring, acc, Rnew, newcols, xfillcol) = gibbs_step(regdata, currentcols, Rnow, tmpX, err1, err2, colsrecord, colsvec, tsteps[i], i, tsteps, t_iter, accept_rate, dicthitrate, firstcolsvec, printiter, xfillcol = xfillcol)
+
+		keycheck = haskey(colsrecord, newcolsvec)
+		if keycheck
+			delete!(colsrecord, newcolsvec)
+		elseif !memcheck #if not enough memory purge 10% of colsRecord weighted towards earlier elements
+			while !memcheck
+				purgerecord!(colsrecord)
+				memcheck = (Sys.free_memory() > membuffer) #make sure enough free memory to add to dictionary
+			end
+		end
+
+		dicthitrate = dicthitrate*f + (1-f)*keycheck
+		
+		push!(colsrecord, newcolsvec => (newerr1, newerr2, Rnew, newcols))
+		accept_rate = f*accept_rate + (1-f)*acc
+
+		deltC = newerr2 - err2
+		if deltC > 0
+			deltCbar += deltC
+			m2 += 1
+		else
+			m1 += 1
+		end
+
+		c = m2 / (m2*chi - (1-chi)*m1)
+		tsteps[i+1] = if c <= 0
+			0.0
+		elseif c <= 1
+			Inf 
+		else
+			deltCbar / log(c) / m2
+		end
+
+		if printiter
+			println("Current temperature = $(tsteps[i+1]) after $i steps of calibration")
+			println()
+		end
+
+		#in second half try resetting values to get more accurate calibration
+		if i == round(Int64, length(tsteps)/2) #((i < round(Int64, length(Tsteps)*0.75)) && ((i % N) == 0))
+			m1 = 0
+			m2 = 0
+			deltCbar = 0.0
+		end
+		
+		if acc
+			accs[i] = 1
+			push!(errsrecord, (changestring, newcolsvec, newerr1, newerr2))
+			Rnow = Rnew
+			currentcols = newcols
+			colsvec = newcolsvec
+			(err1, err2) = (newerr1, newerr2)
+		end
+		err2record[i] = err2
+
+		t_iter = f*t_iter + (1-f)*(time() - t_stepstart)
+
+		t_lastprint = printiter ? time() : t_lastprint
+	end
+	(errsrecord, colsrecord, tsteps, accs, err2record)
+end
+
 
 function run_stepwise_anneal(data::InOutPair{T}...; initialcolsvec = BitVector(undef, size(data[1][1], 2)), initialcolsrecord = RecordType{T}(), iter = 0, printiter = true, updateinterval = 1.0, errdelt = 0.0, tpoints = Vector{T}()) where T <: AbstractFloat
 
@@ -325,42 +543,7 @@ function run_stepwise_anneal(data::InOutPair{T}...; initialcolsvec = BitVector(u
 	y = datainput[1][2]
 	traincols = datainput[1][1]
 
-	Xtmp = ones(T, length(y), length(traincols)+1)
-	tmpX = if testerr
-		Xtmp2 = ones(T, length(datainput[2][2]), length(datainput[1][1])+1)
-		ytest = datainput[2][2]
-		(Xtmp, Xtmp2)
-	else
-		(Xtmp,)
-	end
-
-	#####################Get initial errors and R matrix#########################
-	if sum(initialcolsvec) == 0
-		println("Calculating bias term error as a baseline")
-		err1 = sum(abs2, (y .- mean(y)))/length(y)
-		err2 = testerr ? sum(abs2, (data[2][2] .- mean(y)))/length(data[2][2]) : length(y)*log(err1)+log(length(y))
-		#get initial R vector for bias terms
-		_, R = qr(ones(T, length(y), 1))
-	elseif haskey(initialcolsrecord, initialcolsvec)
-		println("Using dictionary to get errors for initial columns")
-		(err1, err2, R, cols) = initialcolsrecord[initialcolsvec]
-	else
-		println("Calculating errors for initial columns")
-		
-		#fill in tmpX with for initialcols
-		for i in eachindex(tmpX)
-			for (j, c) in enumerate(initialcols) 
-				view(tmpX[i], :, j+1) .= traincols[c]
-			end
-		end
-		_, R = qr(view(tmpX[1], :, 1:length(initialcols)+1))
-		err1, beta = calc_linreg_error(R, view(tmpX[1], :, 1:length(initialcols)+1), y)
-		err2 = if testerr
-			calc_linreg_error(beta, view(tmpX[2], :, 1:length(initialcols)+1), ytest)
-		else
-			calc_linreg_bic(err1, view(tmpX[1], :, 1:length(initialcols)+1), y)
-		end
-	end
+	(testerr, tmpX, initialcols, err1, err2, R) = getinitialerrs(datainput, initialcolsvec, initialcolsrecord)
 		
 	str = testerr ? "train and test error" : "error and BIC"
 	println(string("Got $str of : ", (err1, err2), " using ", sum(initialcolsvec), "/", length(initialcolsvec), " columns"))
@@ -405,15 +588,163 @@ function run_stepwise_anneal(data::InOutPair{T}...; initialcolsvec = BitVector(u
 	(errs_out, colsrecord, temprecord)
 end
 
+function run_temp_calibrate(regdata::InOutPair{T}...; seed = 1, colsrecord::RecordType{T} = RecordType{T}(), printiter = true, updateinterval = 2.0, chi = 0.9) where T <: AbstractFloat where N
+
+	Random.seed!(seed)
+	
+	datainput = map(a -> (collect.(eachcol(a[1])), a[2]), regdata)
+
+	y = datainput[1][2]
+	traincols = datainput[1][1]
+	n = length(traincols)
+
+	initialcolsvec = rand(Bool, length(traincols))
+	(testerr, tmpX, initialcols, err1, err2, R) = getinitialerrs(datainput, initialcolsvec, colsrecord)
+	str = testerr ? "train and test error" : "error and BIC"
+
+	println("Beginning temperature calibration with a target select rate of $chi")
+		
+	println("Got $str of: $((err1, err2)) using $(sum(initialcolsvec))/$n columns")
+	println("--------------------------------------------------------------------")
+	println("Setting up $(length(traincols)) columns for step updates")
+
+	#add line padding for print update if print is turned on
+	if printiter
+		lines = ceil(Int64, n/20) + 12
+		for i in 1:lines-1 
+			println()
+		end
+		println("Waiting for first step to complete")
+	else
+		numsteps = 2*round(Int64, n*log(n))+1
+		println("Starting $numsteps steps of sampling process without printing updates")
+	end
+
+	push!(colsrecord, initialcolsvec => (err1, err2, R, initialcols))
+	calibrate_gibbs_temp(datainput, tmpX, R, initialcols, [("", initialcolsvec, err1, err2)], colsrecord; printstep = printiter, updateinterval = updateinterval, chi = chi)
+end
 
 function extract_record(errs_record)
 	errs = [a[4] for a in errs_record]
 	sortind = sortperm(errs)
-	errdelt = quantile(abs.(errs[2:end] .- errs[1:end-1]), 0.25)
+	errdelt = try 
+		quantile(abs.(errs[2:end] .- errs[1:end-1]), 0.25) 
+	catch 
+		0.0 
+	end
 	bestcols = errs_record[sortind[1]][2]
 	besterr1 = errs_record[sortind[1]][3]
 	besterr2 = errs_record[sortind[1]][4]
 	(besterr1, besterr2, errdelt, bestcols) 
+end
+
+function calc_accept_rate(C::Vector{T}) where T <: AbstractFloat
+	l = length(C)
+	numacc = 0
+	for i in 1:(l-1)
+		if C[i] != C[i+1]
+			numacc += 1
+		end
+	end
+	numacc/(l-1)
+end
+
+function run_stationary_steps(regdata::NTuple{N, InOutPairCols{T}}, initialcolsvec::ColVec, initialcolsrecord::RecordType{T}, initialtemp::Float64, C0::Float64; seed = 1, printiter = true, updateinterval = 2.0, delt = 0.001, n = length(regdata[1][1]), m = round(Int64, n*log(n))) where T <: AbstractFloat where N
+	
+	Random.seed!(seed)
+	
+	println()
+	println("-------------------------------------------------------------------------------------------------------------------")
+	println("Beginning quasistatic steps at temperature of $initialtemp with a delta of $delt and equilibrium plateau of $m steps")
+	println("-------------------------------------------------------------------------------------------------------------------")
+	println()
+
+	(testerr, tmpX, initialcols, err1, err2, R) = getinitialerrs(regdata, initialcolsvec, initialcolsrecord)
+	
+	traincols = regdata[1][1]
+	y = regdata[1][2]
+
+	str = testerr ? "train and test error" : "error and BIC"
+		
+	println("Got $str of: $((err1, err2)) using $(sum(initialcolsvec))/$n columns")
+	println("--------------------------------------------------------------------")
+	println("Setting up $(length(traincols)) columns for step updates")
+
+	tsteps = fill(initialtemp, m)
+	
+	#add line padding for print update if print is turned on
+	lines = ceil(Int64, n/20) + 14
+	if printiter
+		println("On initial step using starting temperature of $initialtemp")
+		for j in 1:lines-1
+			println()
+		end
+	else
+		println("Starting $m steps of sampling process without printing updates")
+	end
+
+	(err_record, colsrecord, temprecord, costsequence, currentcols, xfillcol, R) = run_gibbs_step(regdata, R, tmpX, initialcols, [("", initialcolsvec, err1, err2)], push!(initialcolsrecord, initialcolsvec => (err1, err2, R, initialcols)), tsteps, printstep=printiter, updateinterval = updateinterval, calibrate = false)
+	Cs = mean(costsequence)
+	ar = calc_accept_rate(costsequence)
+
+	fulltemprecord = [(initialtemp, Cs, ar)]
+
+	sig = std(costsequence)
+	newtemp = initialtemp/(1+(log(1+delt)*initialtemp/(3*sig)))
+	dT = newtemp - initialtemp
+	dC = Cs-C0
+	thresh = abs(dC/dT * newtemp/C0)
+	i = 1
+
+	t_report = time()
+	while thresh > eps(Cs)
+		if time() - t_report > updateinterval
+			printcheck = true
+			t_report = time()
+		else
+			printcheck = false
+		end
+		if printiter && printcheck
+			print("\u001b[$(lines)F") #move cursor to beginning of lines lines+1 lines up
+			print("\u001b[2K") #clear entire line
+			println("Reducing temperature from #$(i-1):$(round(initialtemp, sigdigits = 3)) to #$i:$(round(newtemp, sigdigits = 3)) with thresh:$(round(thresh, digits = 3))")
+			print("\u001b[$(lines)E") #move cursor to beginning of lines lines+1 lines down
+		end
+		tsteps = fill(newtemp, m)
+		initialtemp = newtemp
+		(err_record, colsrecord, temprecord, costsequence, currentcols, xfillcol, R) = run_gibbs_step(regdata, R, tmpX, currentcols, err_record, colsrecord, tsteps, printstep=printiter&&printcheck, updateinterval = updateinterval, calibrate = false, xfillcol = xfillcol)
+		ar = calc_accept_rate(costsequence)
+		push!(fulltemprecord, (newtemp, mean(costsequence), ar))
+		sig = std(costsequence)
+		newtemp = initialtemp/(1+(log(1+delt)*initialtemp/(3*sig)))
+		dC = mean(costsequence) - Cs
+		Cs = mean(costsequence)
+		dT = newtemp - initialtemp
+		thresh = abs(dC/dT * newtemp/C0)
+		i += 1
+	end
+
+	colscheck = true
+	while colscheck
+		if time() - t_report > updateinterval
+			printcheck = true
+			t_report = time()
+		else
+			printcheck = false
+		end
+		if printiter && printcheck
+			print("\u001b[$(lines+1)F") #move cursor to beginning of lines lines+1 lines up
+			print("\u001b[2K") #clear entire line
+			println("Confirming local minimum at a temperature of 0.0")
+			print("\u001b[$(lines+1)E") #move cursor to beginning of lines lines+1 lines down
+		end
+		tsteps = fill(0.0, round(Int64, n*log(n)))
+		(err_record, colsrecord, temprecord, costsequence, currentcols, xfillcol, R) = run_gibbs_step(regdata, R, tmpX, currentcols, err_record, colsrecord, tsteps, printstep=printiter&&printcheck, updateinterval = updateinterval, calibrate = false, xfillcol = xfillcol)
+		ar = calc_accept_rate(costsequence)
+		push!(fulltemprecord, (0.0, mean(costsequence), ar))
+		colscheck = length(unique(costsequence)) > 1 #verify that sequence is still fluctuating
+	end
+	(err_record, colsrecord, fulltemprecord)
 end
 
 function run_stepwise_anneal_process(data::InOutPair{T}...; seed = 1, colnames = map(a -> string("Col ", a), 1:size(data[1][1], 2)), initialcolsrecord = RecordType{T}(), printiter=true, updateinterval = 2.0) where T <: AbstractFloat
@@ -491,105 +822,100 @@ function run_stepwise_anneal_process(data::InOutPair{T}...; seed = 1, colnames =
 		println()
 		println()
 		usedcols = newbestcols 
-		usedcolscheck = [in(i, usedcols) ? "x" : "" for i in 1:length(colnames)]
+		usedcolscheck = [in(i, usedcols) ? "x\t$n" : " \t$n" for (i, n) in enumerate(colnames)]
 		(usedcols, usedcolscheck, besterr1, besterr2, newcolsrecord, newtemprecord)
 	end
 end
 
-# function run_quasistatic_anneal_process(regdata::InOurPair{T}...; seed = 1, colnames = map(a -> string("Col ", a), 1:size(regdata[1], 2)), initialcolsrecord::RecordType{T} = RecordType{T}(), printiter=true, updateinterval = 2.0, chi = 0.9, delt = 0.001, M = round(Int64, size(regdata[1], 2)*log(size(regdata[1], 2))))
+function run_quasistatic_anneal_process(regdata::InOutPair{T}...; seed = 1, colnames = map(a -> string("Col ", a), 1:size(regdata[1][1], 2)), initialcolsrecord::RecordType{T} = RecordType{T}(), printiter=true, updateinterval = 2.0, chi = 0.9, delt = 0.001, M = round(Int64, size(regdata[1][1], 2)*log(size(regdata[1][1], 2)))) where T <: AbstractFloat
 
-# 	X = regdata[1][1]
-# 	y = regdata[1][2]
-# 	n = size(X, 2)
-# 	m = size(X, 1)
+	X = regdata[1][1]
+	y = regdata[1][2]
+	n = size(X, 2)
+	m = size(X, 1)
 
-# 	@assert m == length(y) "X and y must have the same number of rows"
+	#convert X's in data to vectors of columns
+	datainput = map(a -> (collect.(eachcol(a[1])), a[2]), regdata)
 
-# 	testerr = (length(regdata) == 2)
+	@assert m == length(y) "X and y must have the same number of rows"
 
-# 	if testerr 
-# 		Xtest = regdata[2][1]
-# 		ytest = regdata[2][1]
-# 		@assert size(Xtest, 1) == length(ytest) "Xtest and ytest must have the same number of rows"
-# 	end
+	testerr = (length(regdata) == 2)
+	str = testerr ? "training and test errors" : "error and BIC"
 
-# 	badCols = findall([sum(X[:, c]) for c in 1:n] == 0)
-# 	@assert isempty(badCols) "Cannot continue with columns $badCols being zero valued"
+	if testerr 
+		Xtest = regdata[2][1]
+		ytest = regdata[2][2]
+		@assert size(Xtest, 1) == length(ytest) "Xtest and ytest must have the same number of rows"
+	end
 
-# 	namePrefix = "QuasistaticAnnealReheatLinReg"
+	badCols = findall([sum(X[:, c]) for c in 1:n] == 0)
+	@assert isempty(badCols) "Cannot continue with columns $badCols being zero valued"
+
+	namePrefix = "QuasistaticAnnealReheatLinReg"
 	
-# 	(errsrecord1, colsrecord, tsteps, accs, testerrs) = runTempCalibrate(regdata..., seed = seed, initialcolsrecord = initialcolsrecord, printiter = printiter, updateinterval = updateinterval, chi = chi)
-# 	l = length(accs)
-# 	accrate = mean(accs[round(Int64, l/2):end])
-# 	newtemp = tsteps[end]
-# 	println("Achieved an acceptance rate of $accrate compared to a target of $chi with a final temperature of $newtemp")
+	(errsrecord, colsrecord, tsteps, accs, errs) = run_temp_calibrate(regdata..., seed = seed, colsrecord = initialcolsrecord, printiter = printiter, updateinterval = updateinterval, chi = chi)
+	l = length(accs)
+	accrate = mean(accs[round(Int64, l/2):end])
+	newtemp = tsteps[end]
+	println("Achieved an acceptance rate of $accrate compared to a target of $chi with a final temperature of $newtemp")
 
 
-# 	# (newBestTestErr, bestInd) = findmin([a[3][2] for a in errsRecord1])
-# 	newBestInd = length(errsRecord1)
-# 	newBestRecord = errsRecord1[end]
-# 	newBestTestErr = newBestRecord[3][2]
-# 	newBestCols = newBestRecord[2]
-# 	startingColsVec = newBestCols
-
-# 	C0 = mean(testErrs[round(Int64, l/2):end])
-# 	errsRecord = deepcopy(errsRecord1)
-# 	bestTestErr = Inf
-# 	fullTempRecord = []
-# 	origSeed = seed
-# 	while newBestTestErr < bestTestErr
-# 		bestTestErr = newBestTestErr
-# 		startTime = time()
-# 		(newErrsRecord, colsRecord, tempRecord) = runStationarySteps(regData..., startingColsVec, colsRecord, newTemp, C0, seed = seed, delt = delt, M = M)
-
-# 		seed = rand(UInt32)
-
-# 		startingColsVec = newErrsRecord[end][2]
-# 		temps = [a[1] for a in tempRecord]
-# 		ARs = [a[3] for a in tempRecord]
-# 		avgErrs = [a[2] for a in tempRecord]
-# 		ind = findfirst(a -> a < 0.25, ARs)
-
-# 		if ind > 1
-# 			newTemp = (temps[ind] + temps[ind-1])/2
-# 			C0 = (avgErrs[ind] + avgErrs[ind-1])/2
-# 		else
-# 			newTemp = temps[ind]
-# 			C0 = avgErrs[ind]
-# 		end
-
-# 		iterSeconds = time() - startTime
-# 		iterMins = floor(Int64, iterSeconds/60)
-# 		iterSecs = iterSeconds - 60*iterMins
-# 		iterTimeStr = string(iterMins, ":", round(iterSecs, digits = 2))
-
-# 		errsRecord = [errsRecord; newErrsRecord[2:end]]
-# 		fullTempRecord = [fullTempRecord; tempRecord]
-# 		testErrs = [a[3][2] for a in errsRecord]
-# 		(newBestTestErr, bestInd) = findmin(testErrs)
-# 		newBestRecord = errsRecord[bestInd]
-# 		newBestCols = newBestRecord[2]
-
-# 		println(string("Quasitatic annealing complete after ", iterTimeStr, " with best columns: ", findall(newBestCols), "\nwith training and test errors of ", newBestRecord[3]))
-# 		if newBestTestErr < bestTestErr
-# 			println(string("Resetting temperature to ", newTemp, " to try to find a better configuration"))
-# 		else
-# 			println("No improvement found after reheating so terminating process")
-# 		end
-# 	end
-
-# 	recordFileOut = [("Col Changes", "Columns", "Train Err", "Test Err"); reduce(vcat, [(newBestRecord[1], findall(newBestCols), newBestRecord[3][1], newBestRecord[3][2]); [(a[1], findall(a[2]), a[3][1], a[3][2]) for a in errsRecord]])]
-
-# 	tempFileOut = [["Temperature" "Cost Avg" "Accept Rate"]; reduce(vcat, [[a[1] a[2] a[3]] for a in fullTempRecord])]
-
-
-# 	usedColsCheck = [a ? "x" : "" for a in newBestCols]
-# 	writedlm("$(namePrefix)_$(origSeed)Seed$(delt)Delt$(M)Steps$(chi)CHI_BestUsedCols_$name.txt", [usedColsCheck colNames])
+	# (newBestTestErr, bestInd) = findmin([a[3][2] for a in errsRecord1])
 	
-# 	writedlm("$(namePrefix)_$(origSeed)Seed$(delt)Delt$(M)Steps$(chi)CHI_Record_$name.txt", recordFileOut, '\t')
-	
-# 	writedlm("$(namePrefix)_$(origSeed)Seed$(delt)Delt$(M)Steps$(chi)CHI_TemperatureSteps_$name.csv", tempFileOut, ',')
+	bestrecord = errsrecord[end]
+	newbesterr1 = bestrecord[3]
+	newbesterr2 = bestrecord[4]
+	bestcols = bestrecord[2]
+	startingcolsvec = bestcols
 
-# 	(errsRecord, colsRecord, fullTempRecord, (newBestTestErr, newBestInd))
-# end
+	C0 = mean(errs[round(Int64, l/2):end])
+	besterr2 = Inf
+	fulltemprecord = []
+	origseed = seed
+	while newbesterr2 < besterr2
+		besterr2 = newbesterr2
+		t_start = time()
+		(newerrs_record, colsrecord, temprecord) = run_stationary_steps(datainput, startingcolsvec, colsrecord, newtemp, C0, seed = seed, delt = delt)
+
+		seed = rand(UInt32)
+
+		startingcolsvec = newerrs_record[end][2]
+		temps = [a[1] for a in temprecord]
+		ARs = [a[3] for a in temprecord]
+		avgerrs = [a[2] for a in temprecord]
+		ind = findfirst(a -> a < 0.25, ARs)
+
+		if ind > 1
+			newtemp = (temps[ind] + temps[ind-1])/2
+			C0 = (avgerrs[ind] + avgerrs[ind-1])/2
+		else
+			newtemp = temps[ind]
+			C0 = avgerrs[ind]
+		end
+
+		iterseconds = time() - t_start
+		itertimestr = maketimestr(iterseconds)
+
+		for r in newerrs_record[2:end]
+			push!(errsrecord, r)
+		end
+
+		for r in temprecord
+			push!(fulltemprecord, r)
+		end
+
+		
+		(newbesterr1, newbesterr2, errdelt, bestcols) = extract_record(newerrs_record) 
+
+		println("Quasitatic annealing complete after $itertimestr with $(sum(bestcols)) columns\nwith $str of $((newbesterr1, newbesterr2))")
+		if newbesterr2 < besterr2
+			println(string("Resetting temperature to ", newtemp, " to try to find a better configuration"))
+		else
+			println("No improvement found after reheating so terminating process")
+		end
+	end
+	usedcols = findall(bestcols)
+	usedcolscheck = [in(i, usedcols) ? "x\t$n" : " \t$n" for (i, n) in enumerate(colnames)]
+	(usedcols, usedcolscheck, newbesterr1, newbesterr2, colsrecord, fulltemprecord, errsrecord)
+end
 

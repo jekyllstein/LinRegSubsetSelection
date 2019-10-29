@@ -12,6 +12,6 @@ include("subset_iteration.jl")
 include("stepwise_regression.jl")
 include("gibbs_step_regression.jl")
 
-export run_stepwise_reg, run_stepwise_anneal, run_stepwise_anneal_process, run_subset_reg
+export run_stepwise_reg, run_stepwise_anneal, run_stepwise_anneal_process, run_subset_reg, run_quasistatic_anneal_process
 
 end # module

@@ -26,6 +26,29 @@ commoncols = shuffleind[testgap+1:l]
 println("$l columns with $(length(commoncols)) shared between test and train")
 println("---------------------------------------------------------------------")
 
+################################Stepwise Quasistatic Anneal Test##################################################
+(colsubset, colscheck, err, bic, colsrecord) = run_quasistatic_anneal_process((X, y), chi = 0.5, delt = 1.0)
+missingcols = setdiff(usedindtrain, colsubset)
+addedcols = setdiff(colsubset, usedindtrain)
+println("Missing quasistatic anneal columns: $missingcols")
+println("Added quasistatic anneal columns: $addedcols")
+println("----------------------------------------------")
+@test isempty(missingcols)
+
+(colsubset, colscheck, err1, err2, colsrecord) = run_quasistatic_anneal_process((X, y), (Xtest, ytest), chi = 0.5,delt = 1.0)
+missingtraincols = setdiff(usedindtrain, colsubset)
+addedtraincols = setdiff(colsubset, usedindtrain)
+missingtestcols = setdiff(usedindtest, colsubset)
+addedtestcols = setdiff(colsubset, usedindtest)
+missingcommoncols = setdiff(commoncols, colsubset)
+addedcommoncols = setdiff(colsubset, commoncols)
+println("Missing quasistatic anneal test columns: $missingtestcols")
+println("Added quasistatic anneal test columns: $addedtestcols")
+println("Missing quasistatic anneal columns: $missingcommoncols")
+println("Added quasistatic anneal columns: $addedcommoncols")
+println("----------------------------------------------")
+@test isempty(missingcommoncols)
+
 
 ################################Full Subset Selection Test########################################################
 (colsubset, usedcolscheck, record) = run_subset_reg((X, y))
@@ -53,7 +76,7 @@ println("----------------------------------------------")
 @test isempty(missingcommoncols)
 
 ################################Stepwise Anneal Test########################################################
-(colsubset, err, bic, colsrecord) = run_stepwise_anneal_process((X, y))
+(colsubset, colscheck, err, bic, colsrecord) = run_stepwise_anneal_process((X, y))
 missingcols = setdiff(usedindtrain, colsubset)
 addedcols = setdiff(colsubset, usedindtrain)
 println("Missing gibbs anneal columns: $missingcols")
@@ -61,7 +84,7 @@ println("Added gibbs anneal columns: $addedcols")
 println("----------------------------------------------")
 @test isempty(missingcols)
 
-(colsubset, err, bic, colsrecord) = run_stepwise_anneal_process((X, y), (Xtest, ytest))
+(colsubset, colscheck, err, bic, colsrecord) = run_stepwise_anneal_process((X, y), (Xtest, ytest))
 missingtraincols = setdiff(usedindtrain, colsubset)
 addedtraincols = setdiff(colsubset, usedindtrain)
 missingtestcols = setdiff(usedindtest, colsubset)
