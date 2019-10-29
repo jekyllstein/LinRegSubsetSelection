@@ -11,7 +11,7 @@ e = 0.1
 #have only a subset of size l from a possible N to be useful
 shuffleind = shuffle(1:N)
 usedindtrain = shuffleind[1:l]
-testgap = min(N-l, rand(1:l-1))
+testgap = min(N-l, rand(min(l-1, round(Int64, l/2)):l-1))
 
 betas = rand([-2.0, -1.0, 1.0, 2.0], l)
 y = X[:, usedindtrain]*betas .+ 1.0 .+ e.*randn(M)
@@ -26,6 +26,8 @@ commoncols = shuffleind[testgap+1:l]
 println("$l columns with $(length(commoncols)) shared between test and train")
 println("---------------------------------------------------------------------")
 
+
+################################Full Subset Selection Test########################################################
 (colsubset, usedcolscheck, record) = run_subset_reg((X, y))
 missingcols = setdiff(usedindtrain, colsubset)
 addedcols = setdiff(colsubset, usedindtrain)
@@ -50,6 +52,7 @@ println("Added subset search columns: $addedcommoncols")
 println("----------------------------------------------")
 @test isempty(missingcommoncols)
 
+################################Stepwise Anneal Test########################################################
 (colsubset, err, bic, colsrecord) = run_stepwise_anneal_process((X, y))
 missingcols = setdiff(usedindtrain, colsubset)
 addedcols = setdiff(colsubset, usedindtrain)
@@ -72,6 +75,8 @@ println("Added gibbs anneal columns: $addedcommoncols")
 println("----------------------------------------------")
 @test isempty(missingcommoncols)
 
+
+################################Stepwise Regression Test########################################################
 (colsubset, usedcolscheck, record) = run_stepwise_reg((X, y))
 
 missingcols = setdiff(usedindtrain, colsubset)
