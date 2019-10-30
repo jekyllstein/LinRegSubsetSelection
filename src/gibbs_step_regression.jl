@@ -406,7 +406,7 @@ function calibrate_gibbs_temp(regdata::NTuple{N, InOutPairCols{T}}, tmpX::NTuple
 	f = 0.99 #controls how long running average is for iter time and accept and repeat rate
 
 	membuffer = if Sys.isapple()
-		n*n*min(M, 1000)*8
+		n*n*min(m, 1000)*8
 	else
 		1e9 + (n*l*4 + n*n*1000)*8 #number of bytes to make sure are available for dictionary addition
 	end
