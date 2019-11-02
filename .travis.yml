@@ -32,7 +32,8 @@ notifications:
 
 after_success:
   - julia -e 'using Pkg; 
-              cd(Pkg.dir("LinRegSubsetSelection")); 
+              import LinRegSubsetSelection;
+              cd(joinpath(dirname(pathof(LinRegSubsetSelection)), ".."));
               Pkg.add("Coverage"); 
               include("process_src_coverage.jl");
               Coveralls.submit(process_folder2()); 
