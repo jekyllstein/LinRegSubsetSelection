@@ -34,6 +34,6 @@ after_success:
   - julia -e 'using Pkg; 
               cd(Pkg.dir("LinRegSubsetSelection")); 
               Pkg.add("Coverage"); 
-              include("process_src_coverage.jl")
+              include("process_src_coverage.jl");
               Coveralls.submit(process_folder2()); 
               Codecov.submit(process_folder2())'
