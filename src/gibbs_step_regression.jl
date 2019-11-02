@@ -9,7 +9,7 @@ function getnewtemps(temprecord, cutoff = 0)
 	convY(y) = (y - Ymin)/(Ymax-Ymin)
 	inds = [findfirst(a -> a <= b, convY.(Ybar)) for b in LinRange(high, high/5, 5)]
 	# println("Ts = $(Tbar[inds])")
-	Ts = [Tbar[inds]; 0.0]
+	Ts = [[isnothing(i) ? Inf : Tbar[i] for i in inds]; 0.0]
 end
 
 function getinitialerrs(regdata::NTuple{N, InOutPairCols{T}}, colsvec::ColVec, colsrecord::RecordType{T}) where T <: AbstractFloat where N

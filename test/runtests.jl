@@ -2,7 +2,8 @@ using LinRegSubsetSelection
 using Random
 using Test
 
-M = 10000
+Random.seed!(1)
+M = 1000
 N = 15
 l = rand(5:min(N, 20))
 X = randn(M, N)
